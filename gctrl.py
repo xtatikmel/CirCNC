@@ -434,10 +434,15 @@ class GCodeGUI:
                 "3": "0.1"     # Rápida
             }[self.speed_var.get()]
             
-            # Enviar comando de movimiento
-            command = f"G91G0{direction.upper()}{speed}"
+            # Extraer el eje y la dirección
+            axis = direction[0].upper()
+            is_positive = direction[1] == '+'
+            distance = speed if is_positive else f"-{speed}"
+            
+            # Enviar comando en formato compatible con el Arduino
+            command = f"G0 {axis}{distance}"
             self.controller.send_command(command)
-            self.log(f"Movimiento manual: {direction}")
+            self.log(f"Movimiento manual: {axis} {distance}")
 
     def update_position(self):
         """Actualiza la posición mostrada en la interfaz"""
