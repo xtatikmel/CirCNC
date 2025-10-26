@@ -9,13 +9,13 @@ echo.
 REM Check if pytest is installed
 python -m pytest --version >nul 2>&1
 if errorlevel 1 (
-    echo X pytest no esta instalado.
+    echo ERROR: pytest no está instalado.
     echo Por favor ejecute: pip install -r requirements.txt
     pause
     exit /b 1
 )
 
-echo + pytest encontrado
+echo OK: pytest encontrado
 echo.
 
 REM Run tests
@@ -28,14 +28,14 @@ REM Check exit code
 if errorlevel 1 (
     echo.
     echo ========================================
-    echo X Algunas pruebas fallaron
+    echo ERROR: Algunas pruebas fallaron
     echo ========================================
     pause
     exit /b 1
 ) else (
     echo.
     echo ========================================
-    echo + Todas las pruebas pasaron exitosamente
+    echo SUCCESS: Todas las pruebas pasaron exitosamente
     echo ========================================
     pause
     exit /b 0
