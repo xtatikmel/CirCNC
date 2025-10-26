@@ -79,7 +79,7 @@ pytest -v
 ### Cobertura de Pruebas
 - **85 pruebas unitarias**: Validan componentes individuales
   - 30 tests: Controlador G-code
-  - 22 tests: Puerto Arduino  
+  - 22 tests: Puerto Arduino
   - 33 tests: Orígenes de motores
 - **44 pruebas de integración**: Validan flujos de trabajo completos
   - 16 tests: Flujos generales
@@ -96,9 +96,9 @@ Las contribuciones son bienvenidas. Por favor, abre un issue para discutir los c
 [Agregar información de licencia]
 
 ## Contacto
-[Agregar información de contacto] 
+[Agregar información de contacto]
 
-## Referencias 
+## Referencias
 
 https://www.marginallyclever.com/2013/08/how-to-build-an-2-axis-arduino-cnc-gcode-interpreter/
 https://github.com/damellis/gctrl

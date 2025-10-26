@@ -162,7 +162,7 @@ Este documento detalla la verificación completa de las conexiones del puerto Ar
   - Rango: 0-40mm
   - Pasos por revolución: 4096 (configurado en Arduino)
   - Pasos por mm: 200 (configurado en Arduino)
-  
+
 - **Motor Y**: Puerto 1 del Arduino Motor Shield
   - Tipo: Stepper de DVD
   - Rango: 0-40mm
@@ -193,7 +193,7 @@ Este documento detalla la verificación completa de las conexiones del puerto Ar
 
 ### Nuevas Pruebas Agregadas (83 tests)
 - Puerto Arduino: 22 pruebas unitarias
-- Orígenes de motores: 33 pruebas unitarias  
+- Orígenes de motores: 33 pruebas unitarias
 - Integración Arduino: 28 pruebas de integración
 - **Pasadas**: 83 ✅
 - **Fallidas**: 0
@@ -234,11 +234,11 @@ Este documento detalla la verificación completa de las conexiones del puerto Ar
      - Motor X → Puerto 2 del Motor Shield
      - Motor Y → Puerto 1 del Motor Shield
      - Servo Z → Pin 10 PWM
-   
+
 2. **Configuración Serial**
    - Usar baudrate 9600
    - Asegurar que el Arduino esté programado con el firmware incluido (CNC_code.ino)
-   
+
 3. **Pruebas de Hardware**
    - Ejecutar prueba de límites antes de operación normal
    - Verificar homing inicial después de conectar
