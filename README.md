@@ -55,7 +55,32 @@ python gctrl.py
 - **¡EMERGENCIA!**: Detiene inmediatamente la máquina
 
 ## Capturas de Pantalla
-[Aquí se agregarán las capturas de pantalla de la aplicación]
+
+![Interfaz Principal](images/running.png)
+
+![Interfaz Complete](images/complete.png)
+
+## Pruebas
+
+El proyecto incluye una suite completa de pruebas automatizadas para garantizar la calidad y facilitar el montaje del aplicativo.
+
+### Ejecutar Pruebas
+```bash
+# Instalar dependencias de prueba
+pip install -r requirements.txt
+
+# Ejecutar todas las pruebas
+pytest
+
+# Ejecutar con salida detallada
+pytest -v
+```
+
+### Cobertura de Pruebas
+- **30 pruebas unitarias**: Validan componentes individuales
+- **16 pruebas de integración**: Validan flujos de trabajo completos
+
+Para más información, consulte [TESTING.md](TESTING.md).
 
 ## Contribuciones
 Las contribuciones son bienvenidas. Por favor, abre un issue para discutir los cambios propuestos.
@@ -65,3 +90,11 @@ Las contribuciones son bienvenidas. Por favor, abre un issue para discutir los c
 
 ## Contacto
 [Agregar información de contacto] 
+
+## Referencias 
+
+https://www.marginallyclever.com/2013/08/how-to-build-an-2-axis-arduino-cnc-gcode-interpreter/
+https://github.com/damellis/gctrl
+https://github.com/MakerBlock/TinyCNC-Sketches/tree/master
+https://www.instructables.com/search/?q=cnc%20l293&projects=featured
+https://wiki.opensourceecology.org/wiki/Gctrl#Problems_and_Solutions
