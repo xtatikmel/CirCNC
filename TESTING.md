@@ -66,7 +66,18 @@ pytest -k "connection"
 
 ## Cobertura de Pruebas
 
-### Pruebas Unitarias (113 tests)
+### Total: 129 Pruebas
+
+**Desglose:**
+- **Pruebas Unitarias**: 85 tests
+  - Controlador G-code: 30 tests
+  - Puerto Arduino: 22 tests
+  - Orígenes de motores: 33 tests
+- **Pruebas de Integración**: 44 tests
+  - Flujos de trabajo generales: 16 tests
+  - Integración con Arduino: 28 tests
+
+### Pruebas Unitarias (85 tests)
 
 Las pruebas unitarias validan componentes individuales:
 

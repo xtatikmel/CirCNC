@@ -77,9 +77,13 @@ pytest -v
 ```
 
 ### Cobertura de Pruebas
-- **113 pruebas unitarias**: Validan componentes individuales
-- **28 pruebas de integración con Arduino**: Validan flujos de trabajo completos
-- **16 pruebas de integración general**: Validan flujos de trabajo del sistema
+- **85 pruebas unitarias**: Validan componentes individuales
+  - 30 tests: Controlador G-code
+  - 22 tests: Puerto Arduino  
+  - 33 tests: Orígenes de motores
+- **44 pruebas de integración**: Validan flujos de trabajo completos
+  - 16 tests: Flujos generales
+  - 28 tests: Integración con Arduino
 
 **Total: 129 pruebas automatizadas**
 

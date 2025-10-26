@@ -185,20 +185,23 @@ Este documento detalla la verificación completa de las conexiones del puerto Ar
 
 ## Resultados de Ejecución
 
-### Pruebas Unitarias
-- **Total**: 113 pruebas
-- **Pasadas**: 113 ✅
+### Pruebas Existentes (46 tests)
+- Controlador G-code: 30 pruebas unitarias
+- Integración general: 16 pruebas de integración
+- **Pasadas**: 46 ✅
 - **Fallidas**: 0
-- **Tiempo de ejecución**: ~150 segundos
 
-### Pruebas de Integración
-- **Total**: 16 pruebas
-- **Pasadas**: 16 ✅
+### Nuevas Pruebas Agregadas (83 tests)
+- Puerto Arduino: 22 pruebas unitarias
+- Orígenes de motores: 33 pruebas unitarias  
+- Integración Arduino: 28 pruebas de integración
+- **Pasadas**: 83 ✅
 - **Fallidas**: 0
-- **Tiempo de ejecución**: ~60 segundos
 
 ### Totales
-- **Total de pruebas**: 129
+- **Total de pruebas**: 129 (46 existentes + 83 nuevas)
+- **Pruebas unitarias**: 85 (30 + 22 + 33)
+- **Pruebas de integración**: 44 (16 + 28)
 - **Pasadas**: 129 ✅
 - **Fallidas**: 0
 - **Tasa de éxito**: 100%
