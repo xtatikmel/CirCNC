@@ -124,37 +124,62 @@ class GCodeController:
         
         try:
             # Cerrar puerto existente si está abierto
-            if self.port and getattr(self.port, 'is_open', False):
+            if self.port and self.port.is_open:
                 try:
                     self.port.close()
-                except Exception:
-                    pass
+                    if self.log_callback:
+                        self.log_callback(f"Puerto anterior cerrado")
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al cerrar puerto anterior: {str(e)}")
+                self.port = None
 
-            # Abrir el nuevo puerto
-            self.port = serial.Serial(port_name, 9600, timeout=1)
-
-            # Guardar nombre de puerto
-            self.port_name = port_name
-
-            # Limpiar buffers si están disponibles
-            try:
-                self.port.reset_input_buffer()
-            except Exception:
-                pass
-            try:
-                self.port.reset_output_buffer()
-            except Exception:
-                pass
-            
             # Intentar abrir el puerto con diferentes configuraciones
             try:
-                # Evitar referenciar constantes de pyserial que pueden no existir
+                # Configurar el puerto serial con los parámetros requeridos
                 self.port = serial.Serial(
                     port=port_name,
                     baudrate=9600,
+                    bytesize=serial.EIGHTBITS,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
                     timeout=1,
                     write_timeout=1
                 )
+                
+                # Guardar nombre de puerto
+                self.port_name = port_name
+
+                # Limpiar buffers si están disponibles
+                try:
+                    self.port.reset_input_buffer()
+                    self.port.reset_output_buffer()
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al limpiar buffers: {str(e)}")
+                
+                # Enviar comando de prueba al Arduino
+                try:
+                    self.port.write(b"G90\n")  # Usar G90 como comando de prueba
+                    if self.log_callback:
+                        self.log_callback("Comando de prueba enviado (G90)")
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al enviar comando de prueba: {str(e)}")
+                
+            except serial.SerialException as e:
+                if "PermissionError" in str(e) or "Acceso denegado" in str(e):
+                    if self.log_callback:
+                        self.log_callback(f"Error de permisos al abrir puerto {port_name}. Asegúrate de que no esté siendo usado por otro programa.")
+                    return False
+                elif "FileNotFoundError" in str(e):
+                    if self.log_callback:
+                        self.log_callback(f"Puerto {port_name} no encontrado. Verifica la conexión.")
+                    return False
+                else:
+                    if self.log_callback:
+                        self.log_callback(f"Error al abrir puerto {port_name}: {str(e)}")
+                    return False
             except Exception as e:
                 # Si pyserial no está correctamente instalado, informar
                 if self.log_callback:
@@ -165,9 +190,9 @@ class GCodeController:
             read_thread = threading.Thread(target=self.read_responses, daemon=True)
             read_thread.start()
 
-            # Enviar comando de prueba o realizar homing según sea necesario (comentado por ahora)
-            # self.send_command("?")
-            # time.sleep(0.5)
+            # Enviar comando de prueba para verificar comunicación
+            self.send_command("?")
+            time.sleep(0.5)
 
             if self.log_callback:
                 self.log_callback(f"Conectado a {port_name}")
@@ -655,15 +680,37 @@ class GCodeGUI:
         self.port_combo['values'] = ports
         if ports:
             self.port_combo.set(ports[0])
+        else:
+            self.log("No se encontraron puertos disponibles. Verifica la conexión del dispositivo.")
 
     def toggle_connection(self):
         """Conecta/desconecta el puerto serial desde la GUI"""
         if not self.controller.port or not getattr(self.controller.port, 'is_open', False):
-            if self.controller.connect(self.port_var.get()):
+            port = self.port_var.get()
+            if not port:
+                messagebox.showerror("Error de conexión", "No se ha seleccionado ningún puerto. Por favor, selecciona un puerto válido.")
+                return
+                
+            if self.controller.connect(port):
                 self.connect_btn.configure(text="Desconectar")
                 self.start_btn.configure(state=tk.NORMAL)
                 self.emergency_btn.configure(state=tk.NORMAL)
                 self.log("Conectado a " + (self.controller.port_name or ""))
+            else:
+                # Si la conexión falla, mostrar un diálogo con opciones para solucionar el problema
+                respuesta = messagebox.askretrycancel(
+                    "Error de conexión", 
+                    f"No se pudo conectar al puerto {port}.\n\n"
+                    "Posibles soluciones:\n"
+                    "1. Cierra otros programas que puedan estar usando el puerto\n"
+                    "2. Desconecta y vuelve a conectar el dispositivo\n"
+                    "3. Ejecuta el programa como administrador\n"
+                    "4. Selecciona un puerto diferente\n\n"
+                    "¿Quieres intentar conectar de nuevo?"
+                )
+                if respuesta:
+                    # Actualizar puertos y reintentar
+                    self.update_ports()
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")

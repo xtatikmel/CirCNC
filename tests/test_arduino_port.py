@@ -25,7 +25,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify baudrate is 9600 as expected by Arduino
         mock_serial.assert_called_once()
