@@ -705,35 +705,15 @@ class GCodeGUI:
                 "3": "10"    # Rápida: 10mm
             }[self.speed_var.get()]
             
-            # Enviar comando de movimiento
-            axis = direction[0].upper()  # X, Y o Z
-            sign = "+" if direction[1] == "+" else "-"
+            # Extraer el eje y la dirección
+            axis = direction[0].upper()
+            is_positive = direction[1] == '+'
+            distance = speed if is_positive else f"-{speed}"
             
-            # Calcular nueva posición
-            new_position = self.controller.position.copy()
-            move_distance = float(speed) if sign == "+" else -float(speed)
-            new_position[axis.lower()] += move_distance
-            
-            # Verificar límites
-            if not self.controller.check_limits(**new_position):
-                if self.controller.log_callback:
-                    self.controller.log_callback("Movimiento cancelado: fuera de límites")
-                return False
-            
-            # Enviar comando de movimiento
-            command = f"G91G1{axis}{sign}{speed}F1000"
-            
-            if self.controller.log_callback:
-                self.controller.log_callback(f"Enviando comando de movimiento: {command}")
-            
-            # Enviar comando
-            if self.controller.send_command(command):
-                # Actualizar posición
-                self.controller.position = new_position
-                time.sleep(0.5)  # Esperar a que el movimiento se complete
-                return True
-            return False
-        return False
+            # Enviar comando en formato compatible con el Arduino
+            command = f"G0 {axis}{distance}"
+            self.controller.send_command(command)
+            self.log(f"Movimiento manual: {axis} {distance}")
 
     def update_position(self):
         """Actualiza la posición mostrada en la interfaz"""
