@@ -80,34 +80,45 @@ class TestSerialPortDiscovery:
     """Test serial port discovery functionality"""
     
     @patch('platform.system')
-    @patch('serial.Serial')
-    def test_find_serial_ports_windows(self, mock_serial, mock_system):
+    @patch('gctrl.serial')
+    def test_find_serial_ports_windows(self, mock_serial_module, mock_system):
         """Test port discovery on Windows"""
-        mock_system.return_value = 'Windows'
-        mock_serial_instance = MagicMock()
-        mock_serial.return_value = mock_serial_instance
-        
-        controller = GCodeController()
-        ports = controller.find_serial_ports()
-        
-        # Should find some COM ports
-        assert isinstance(ports, list)
+        # Use context managers to patch list_ports.comports for this test
+        with patch('platform.system') as mock_system, \
+                patch('gctrl.serial') as mock_serial_module:
+            mock_system.return_value = 'Windows'
+            # Ensure a tools.list_ports.comports chain exists on the mocked serial module
+            mock_serial_module.tools = MagicMock()
+            mock_serial_module.tools.list_ports.comports.return_value = [MagicMock(device='COM10')]
+
+            controller = GCodeController()
+            ports = controller.find_serial_ports()
+
+            # Should find COM10 returned by list_ports
+            assert isinstance(ports, list)
+            assert 'COM10' in ports
         
     @patch('platform.system')
     @patch('glob.glob')
-    @patch('serial.Serial')
-    def test_find_serial_ports_linux(self, mock_serial, mock_glob, mock_system):
+    @patch('gctrl.serial')
+    def test_find_serial_ports_linux(self, mock_serial_module, mock_glob, mock_system):
         """Test port discovery on Linux"""
-        mock_system.return_value = 'Linux'
-        mock_glob.return_value = ['/dev/ttyUSB0', '/dev/ttyACM0']
-        mock_serial_instance = MagicMock()
-        mock_serial.return_value = mock_serial_instance
-        
-        controller = GCodeController()
-        ports = controller.find_serial_ports()
-        
-        assert isinstance(ports, list)
-        assert len(ports) >= 0
+        with patch('platform.system') as mock_system, \
+                patch('glob.glob') as mock_glob, \
+                patch('gctrl.serial') as mock_serial_module:
+            mock_system.return_value = 'Linux'
+            mock_glob.return_value = ['/dev/ttyUSB0', '/dev/ttyACM0']
+
+            # Patch list_ports.comports to simulate Linux devices
+            mock_serial_module.tools = MagicMock()
+            mock_serial_module.tools.list_ports.comports.return_value = [MagicMock(device='/dev/ttyUSB0'), MagicMock(device='/dev/ttyACM0')]
+
+            controller = GCodeController()
+            ports = controller.find_serial_ports()
+
+            assert isinstance(ports, list)
+            assert '/dev/ttyUSB0' in ports
+            assert '/dev/ttyACM0' in ports
 
 
 class TestCheckLimits:

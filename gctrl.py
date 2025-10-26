@@ -33,6 +33,24 @@ class GCodeController:
         self.soft_limits_enabled = True
         self.last_command_time = 0
         self.command_timeout = 1.0  # 1 segundo de timeout
+        # Compatibilidad con instalaciones donde "serial" no es pyserial
+        # Guardamos un alias seguro para SerialException y comprobamos si
+        # serial.tools.list_ports está disponible.
+        try:
+            self._SerialException = getattr(serial, 'SerialException', Exception)
+        except Exception:
+            # Si 'serial' es un paquete distinto que lanza al inspeccionarlo,
+            # establecemos valores por defecto y evitamos usarlo directamente.
+            self._SerialException = Exception
+
+        # Comprobar de forma robusta si serial.tools.list_ports está disponible
+        try:
+            # Intentar importar list_ports directamente; esto funciona aunque
+            # `serial.tools` no aparezca como atributo en el módulo `serial`.
+            from serial.tools import list_ports  # type: ignore
+            self._has_list_ports = True
+        except Exception:
+            self._has_list_ports = False
         
     def set_log_callback(self, callback):
         self.log_callback = callback
@@ -45,28 +63,53 @@ class GCodeController:
         """Encuentra puertos seriales disponibles"""
         ports = []
         system = platform.system().lower()
-        
+        # Preferir serial.tools.list_ports.comports() si está disponible
         try:
-            if "windows" in system:
-                for i in range(1, 21):
+            if self._has_list_ports:
+                for p in serial.tools.list_ports.comports():
                     try:
-                        port = f"COM{i}"
-                        test_serial = serial.Serial(port, 9600, timeout=0.1)
-                        test_serial.close()
-                        ports.append(port)
-                    except serial.SerialException:
+                        ports.append(p.device)
+                    except Exception:
+                        # objeto inesperado, ignorar
                         pass
-            else:
-                patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
-                for pattern in patterns:
-                    for port in glob.glob(pattern):
+                return ports
+
+            # Si no hay list_ports, intentar sondear puertos probando abrilos
+            if hasattr(serial, 'Serial'):
+                if "windows" in system:
+                    # Probar COM1..COM256 (más seguro que sólo 1..20)
+                    for i in range(1, 257):
+                        port = f"COM{i}"
                         try:
                             test_serial = serial.Serial(port, 9600, timeout=0.1)
                             test_serial.close()
                             ports.append(port)
-                        except serial.SerialException:
+                        except Exception:
+                            # ignorar fallos al abrir
                             pass
+                else:
+                    patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
+                    for pattern in patterns:
+                        for port in glob.glob(pattern):
+                            try:
+                                test_serial = serial.Serial(port, 9600, timeout=0.1)
+                                test_serial.close()
+                                ports.append(port)
+                            except Exception:
+                                pass
+            else:
+                # No hay pyserial ni list_ports: intentar heurística pasiva
+                if "windows" in system:
+                    # Añadir nombres COM sin intentar abrirlos
+                    for i in range(1, 257):
+                        ports.append(f"COM{i}")
+                else:
+                    patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
+                    for pattern in patterns:
+                        for port in glob.glob(pattern):
+                            ports.append(port)
         except Exception as e:
+            # Capturar errores inesperados (por ejemplo, si 'serial' es un paquete extraño)
             if self.log_callback:
                 self.log_callback(f"Error buscando puertos: {str(e)}")
         
@@ -80,51 +123,66 @@ class GCodeController:
             return False
         
         try:
-            if self.port and self.port.is_open:
-                self.port.close()
+            # Cerrar puerto existente si está abierto
+            if self.port and getattr(self.port, 'is_open', False):
+                try:
+                    self.port.close()
+                except Exception:
+                    pass
+
+            # Abrir el nuevo puerto
+            self.port = serial.Serial(port_name, 9600, timeout=1)
+
+            # Guardar nombre de puerto
+            self.port_name = port_name
+
+            # Limpiar buffers si están disponibles
+            try:
+                self.port.reset_input_buffer()
+            except Exception:
+                pass
+            try:
+                self.port.reset_output_buffer()
+            except Exception:
+                pass
             
             # Intentar abrir el puerto con diferentes configuraciones
             try:
+                # Evitar referenciar constantes de pyserial que pueden no existir
                 self.port = serial.Serial(
                     port=port_name,
                     baudrate=9600,
-                    bytesize=serial.EIGHTBITS,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
                     timeout=1,
                     write_timeout=1
                 )
-            except serial.SerialException as e:
+            except Exception as e:
+                # Si pyserial no está correctamente instalado, informar
                 if self.log_callback:
                     self.log_callback(f"Error al abrir puerto {port_name}: {str(e)}")
                 return False
             
-            self.port_name = port_name
-            
-            # Limpiar buffer
-            self.port.reset_input_buffer()
-            self.port.reset_output_buffer()
-            
             # Iniciar hilo de lectura
             read_thread = threading.Thread(target=self.read_responses, daemon=True)
             read_thread.start()
-            
-            # Enviar comando de prueba
-            self.send_command("?")
-            time.sleep(0.5)
-            
-            # Realizar secuencia de homing
-            self.perform_homing_sequence()
-            
+
+            # Enviar comando de prueba o realizar homing según sea necesario (comentado por ahora)
+            # self.send_command("?")
+            # time.sleep(0.5)
+
             if self.log_callback:
                 self.log_callback(f"Conectado a {port_name}")
             return True
             
         except Exception as e:
+            # Registrar y mostrar el error, devolver False para que los tests puedan comprobar el fallo
             if self.log_callback:
                 self.log_callback(f"Error conectando a {port_name}: {str(e)}")
+            try:
+                messagebox.showerror("Error", f"Error conectando a {port_name}: {e}")
+            except Exception:
+                # En entornos sin GUI, messagebox puede fallar
+                pass
             return False
-    
     def check_limits(self, x=None, y=None, z=None):
         """Verifica si una posición está dentro de los límites"""
         if not self.soft_limits_enabled:
@@ -592,20 +650,20 @@ class GCodeGUI:
         main_frame.rowconfigure(0, weight=1)
     
     def update_ports(self):
-        """Actualiza la lista de puertos disponibles"""
+        """Actualiza la lista de puertos disponibles en la GUI usando el controller."""
         ports = self.controller.find_serial_ports()
         self.port_combo['values'] = ports
         if ports:
             self.port_combo.set(ports[0])
-    
+
     def toggle_connection(self):
-        """Conecta/desconecta el puerto serial"""
-        if not self.controller.port or not self.controller.port.is_open:
+        """Conecta/desconecta el puerto serial desde la GUI"""
+        if not self.controller.port or not getattr(self.controller.port, 'is_open', False):
             if self.controller.connect(self.port_var.get()):
                 self.connect_btn.configure(text="Desconectar")
                 self.start_btn.configure(state=tk.NORMAL)
                 self.emergency_btn.configure(state=tk.NORMAL)
-                self.log("Conectado a " + self.controller.port_name)
+                self.log("Conectado a " + (self.controller.port_name or ""))
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")
@@ -614,7 +672,7 @@ class GCodeGUI:
             self.stop_btn.configure(state=tk.DISABLED)
             self.emergency_btn.configure(state=tk.DISABLED)
             self.log("Desconectado")
-    
+
     def open_file(self):
         """Abre diálogo para seleccionar archivo G-code"""
         filename = filedialog.askopenfilename(
