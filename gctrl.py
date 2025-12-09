@@ -512,27 +512,20 @@ class GCodeController:
                 return True
         return False
 
-    def jog(self, direction):
+    def jog(self, direction, speed_mm):
         """Movimiento manual"""
         if not self.port or not self.port.is_open:
             if self.log_callback:
                 self.log_callback("Puerto no conectado")
             return False
 
-        # Obtener velocidad según selección
-        speed = {
-            "1": "1",    # Lenta: 1mm
-            "2": "5",    # Media: 5mm
-            "3": "10"    # Rápida: 10mm
-        }[self.speed_var.get()]
-        
         # Enviar comando de movimiento
         axis = direction[0].upper()  # X, Y o Z
         sign = "+" if direction[1] == "+" else "-"
         
         # Calcular nueva posición
         new_position = self.position.copy()
-        move_distance = float(speed) if sign == "+" else -float(speed)
+        move_distance = float(speed_mm) if sign == "+" else -float(speed_mm)
         new_position[axis.lower()] += move_distance
         
         # Verificar límites
@@ -542,16 +535,22 @@ class GCodeController:
             return False
         
         # Enviar comando de movimiento
-        command = f"G91G1{axis}{sign}{speed}F1000"
+        # G91 = Incremental, G1 = Linear Move, F1000 = Feedrate
+        command = f"G91G1{axis}{sign}{speed_mm}F1000"
         
         if self.log_callback:
             self.log_callback(f"Enviando comando de movimiento: {command}")
         
         # Enviar comando
         if self.send_command(command):
-            # Actualizar posición
+            # Actualizar posición (estimada)
             self.position = new_position
+            # IMPORTANTE: Volver a modo absoluto G90 para evitar confusión en siguientes comandos
             time.sleep(0.5)  # Esperar a que el movimiento se complete
+            # self.send_command("G90") # No enviamos G90 aquí para no interrumpir fluidez, pero el siguiente movimiento absoluto debe asegurarse de enviar G90.
+            # Sin embargo, el estado global en GRBL es modal. Si dejamos en G91, el siguiente G1 X10 se moverá +10.
+            # Es mejor restaurar G90 por seguridad.
+            self.send_command("G90")
             return True
         return False
 
@@ -787,38 +786,29 @@ class GCodeGUI:
         """Mover a posición de origen"""
         if self.controller.port and self.controller.port.is_open:
             if self.controller.origin_set:
-                # Si hay un origen establecido, ir a esa posición
+                # Si hay un origen establecido, ir a esa posición (0,0,0 en coordenadas de trabajo)
                 self.controller.send_command("G90")  # Modo absoluto
-                self.controller.send_command(f"G1 X{self.controller.origin_position['x']} Y{self.controller.origin_position['y']} Z{self.controller.origin_position['z']} F1000")
+                self.controller.send_command("G1 X0 Y0 Z0 F1000")
                 if self.controller.log_callback:
-                    self.controller.log_callback("Retornando a origen establecido")
+                    self.controller.log_callback("Retornando a origen establecido (Work 0,0,0)")
             else:
-                # Si no hay origen establecido, usar el comando de home
+                # Si no hay origen establecido, usar el comando de home de máquina
                 self.controller.send_command("$H")
                 if self.controller.log_callback:
-                    self.controller.log_callback("Enviando comando de home")
+                    self.controller.log_callback("Enviando comando de home ($H)")
             # Esperar un momento y actualizar posición
             self.root.after(1000, self.controller.get_status)
 
     def jog(self, direction):
         """Movimiento manual"""
-        if self.controller.port and self.controller.port.is_open:
-            # Obtener velocidad según selección
-            speed = {
-                "1": "1",    # Lenta: 1mm
-                "2": "5",    # Media: 5mm
-                "3": "10"    # Rápida: 10mm
-            }[self.speed_var.get()]
-            
-            # Extraer el eje y la dirección
-            axis = direction[0].upper()
-            is_positive = direction[1] == '+'
-            distance = speed if is_positive else f"-{speed}"
-            
-            # Enviar comando en formato compatible con el Arduino
-            command = f"G0 {axis}{distance}"
-            self.controller.send_command(command)
-            self.log(f"Movimiento manual: {axis} {distance}")
+        speed_map = {
+            "1": 1.0,    # Lenta: 1mm
+            "2": 5.0,    # Media: 5mm
+            "3": 10.0    # Rápida: 10mm
+        }
+        speed_key = self.speed_var.get()
+        speed_mm = speed_map.get(speed_key, 1.0)
+        self.controller.jog(direction, speed_mm)
 
     def update_position(self):
         """Actualiza la posición mostrada en la interfaz"""
