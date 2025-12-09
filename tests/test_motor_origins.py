@@ -301,6 +301,7 @@ class TestMotorStepCalculation:
         
     def test_motor_speed_medium(self):
         """Test medium motor speed (5mm)"""
+        controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
         controller.position = {'x': 10, 'y': 10, 'z': 2}
