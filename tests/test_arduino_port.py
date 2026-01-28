@@ -41,7 +41,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify 8 data bits (EIGHTBITS)
         call_kwargs = mock_serial.call_args[1]
@@ -56,7 +56,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify no parity (PARITY_NONE)
         call_kwargs = mock_serial.call_args[1]
@@ -71,7 +71,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify 1 stop bit (STOPBITS_ONE)
         call_kwargs = mock_serial.call_args[1]
@@ -86,7 +86,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify timeout is set
         call_kwargs = mock_serial.call_args[1]
@@ -102,7 +102,7 @@ class TestArduinoPortConfiguration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify write timeout is set
         call_kwargs = mock_serial.call_args[1]
@@ -122,7 +122,7 @@ class TestArduinoPortConnection:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify buffers are cleared
         assert mock_port.reset_input_buffer.called
@@ -155,7 +155,7 @@ class TestArduinoPortConnection:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Verify test command is sent
         assert mock_port.write.called
@@ -171,7 +171,7 @@ class TestArduinoPortConnection:
         
         controller = GCodeController()
         with patch('threading.Thread'):
-            controller.connect('COM1')
+            controller.connect('COM10')
             controller.connect('COM2')
         
         # Verify old port was closed
@@ -192,7 +192,7 @@ class TestArduinoPortReconnection:
         controller = GCodeController()
         
         # First connection
-        result1 = controller.connect('COM1')
+        result1 = controller.connect('COM10')
         assert result1 is True
         
         # Disconnect
@@ -202,7 +202,7 @@ class TestArduinoPortReconnection:
         mock_port2 = MagicMock()
         mock_port2.is_open = True
         mock_serial.return_value = mock_port2
-        result2 = controller.connect('COM1')
+        result2 = controller.connect('COM10')
         assert result2 is True
         
     @patch('serial.Serial')
@@ -214,7 +214,7 @@ class TestArduinoPortReconnection:
         callback = Mock()
         controller.set_log_callback(callback)
         
-        result = controller.connect('COM1')
+        result = controller.connect('COM10')
         
         assert result is False
         # Verify error was logged

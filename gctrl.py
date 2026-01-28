@@ -381,6 +381,12 @@ class GCodeController:
             self.streaming = True
             self.paused = False
             self.gcode_index = 0
+            
+            # Asegurar modo absoluto antes de empezar
+            if self.log_callback:
+                self.log_callback("Asegurando modo absoluto (G90)...")
+            self.send_command("G90")
+            
             self.send_next_gcode_line()
     
     def pause_streaming(self):
@@ -431,128 +437,76 @@ class GCodeController:
     def set_origin(self):
         """Establece la posición actual como origen"""
         if self.port and self.port.is_open:
-            self.send_command("G92 X0 Y0 Z0")
+            # Usar G10 L20 P1 para establecer el origen de trabajo (G54)
+            # Esto es más robusto que G92 y persiste mejor
+            self.send_command("G10 L20 P1 X0 Y0 Z0")
             self.origin_position = self.position.copy()
             self.origin_set = True
             if self.log_callback:
-                self.log_callback("Origen establecido en la posición actual")
+                self.log_callback("Origen establecido (G54) en posición actual")
             return True
         return False
-    
-    def test_limits(self):
-        """Prueba los límites de la máquina"""
-        # Secuencia de prueba más completa
-        commands = [
-            "G90",           # Modo absoluto
-            "G1 X0 Y0 Z0 F1000",   # Ir a origen
-            "G1 X50 F1000",        # Mover X a 50mm
-            "G1 X0 F1000",         # Volver a X=0
-            "G1 Y50 F1000",        # Mover Y a 50mm
-            "G1 Y0 F1000",         # Volver a Y=0
-            "G1 Z20 F1000",        # Mover Z a 20mm
-            "G1 Z0 F1000",         # Volver a Z=0
-            "G1 X25 Y25 F1000",    # Mover a punto intermedio
-            "G1 Z10 F1000",        # Subir Z
-            "G1 X0 Y0 F1000",      # Volver a origen
-            "G1 Z0 F1000"          # Bajar Z
-        ]
-        for cmd in commands:
-            self.send_command(cmd)
-            time.sleep(1)  # Esperar más tiempo entre movimientos
 
-    def perform_homing_sequence(self):
-        """Realiza la secuencia de homing para todos los ejes"""
-        if not self.port or not self.port.is_open:
-            return False
-
-        if self.log_callback:
-            self.log_callback("Iniciando secuencia de homing...")
-
-        # Secuencia de homing paso a paso
-        homing_sequence = [
-            "G90",           # Modo absoluto
-            "G21",           # Unidades en milímetros
-            "G91",           # Cambiar a modo incremental para homing
-            "$H",            # Comando de homing
-            "G90",           # Volver a modo absoluto
-            "G1X0Y0Z0F1000", # Mover a origen
-            "G92X0Y0Z0"      # Establecer origen en 0,0,0
-        ]
-
-        for cmd in homing_sequence:
-            if self.log_callback:
-                self.log_callback(f"Enviando comando: {cmd}")
-            if not self.send_command(cmd):
-                if self.log_callback:
-                    self.log_callback("Error en secuencia de homing")
-                return False
-            time.sleep(1)  # Esperar entre comandos
-
-        self.homing_complete = True
-        self.origin_set = True
-        self.origin_position = {'x': 0, 'y': 0, 'z': 0}
-        self.position = {'x': 0, 'y': 0, 'z': 0}  # Resetear posición actual
-        
-        if self.log_callback:
-            self.log_callback("Secuencia de homing completada")
-        return True
-
-    def home(self):
-        """Mover a posición de origen"""
+    def emergency_stop(self):
+        """Parada de emergencia"""
         if self.port and self.port.is_open:
-            if not self.homing_complete:
-                # Si no se ha realizado el homing, hacerlo ahora
-                return self.perform_homing_sequence()
-            else:
-                # Si ya se realizó el homing, solo mover a origen
-                self.send_command("G90")  # Modo absoluto
-                self.send_command("G1 X0 Y0 Z0 F1000")  # Mover a origen con velocidad especificada
-                if self.log_callback:
-                    self.log_callback("Retornando a origen")
-                return True
-        return False
+            try:
+                self.port.write(b'\x18')  # Ctrl+X
+            except Exception as e:
+                self.log(f"Error enviando parada de emergencia: {e}")
+            
+            self.stop_streaming()
+            if self.log_callback:
+                self.log_callback("¡PARADA DE EMERGENCIA ENVIADA!")
+            # Esperar un momento antes de volver a origen
+            # Nota: En emergencia real, quizás no queremos volver a origen automáticamente
+            # pero mantenemos el comportamiento original por ahora.
+            time.sleep(1)
+            # self.return_to_origin() # Desactivado por seguridad tras emergencia
 
     def jog(self, direction, speed_mm):
-        """Movimiento manual"""
+        """Movimiento manual (Ejecutado en hilo para no bloquear GUI)"""
         if not self.port or not self.port.is_open:
             if self.log_callback:
                 self.log_callback("Puerto no conectado")
             return False
 
-        # Enviar comando de movimiento
-        axis = direction[0].upper()  # X, Y o Z
-        sign = "+" if direction[1] == "+" else "-"
-        
-        # Calcular nueva posición
-        new_position = self.position.copy()
-        move_distance = float(speed_mm) if sign == "+" else -float(speed_mm)
-        new_position[axis.lower()] += move_distance
-        
-        # Verificar límites
-        if not self.check_limits(**new_position):
+        def _jog_thread():
+            # Enviar comando de movimiento
+            axis = direction[0].upper()  # X, Y o Z
+            sign = "+" if direction[1] == "+" else "-"
+            
+            # Calcular nueva posición estimada (para UI)
+            new_position = self.position.copy()
+            move_distance = float(speed_mm) if sign == "+" else -float(speed_mm)
+            new_position[axis.lower()] += move_distance
+            
+            # Verificar límites
+            if not self.check_limits(**new_position):
+                if self.log_callback:
+                    self.log_callback("Movimiento cancelado: fuera de límites")
+                return
+
+            # G91 = Incremental, G1 = Linear Move, F1000 = Feedrate
+            command = f"G91G1{axis}{sign}{speed_mm}F1000"
+            
             if self.log_callback:
-                self.log_callback("Movimiento cancelado: fuera de límites")
-            return False
-        
-        # Enviar comando de movimiento
-        # G91 = Incremental, G1 = Linear Move, F1000 = Feedrate
-        command = f"G91G1{axis}{sign}{speed_mm}F1000"
-        
-        if self.log_callback:
-            self.log_callback(f"Enviando comando de movimiento: {command}")
-        
-        # Enviar comando
-        if self.send_command(command):
-            # Actualizar posición (estimada)
-            self.position = new_position
-            # IMPORTANTE: Volver a modo absoluto G90 para evitar confusión en siguientes comandos
-            time.sleep(0.5)  # Esperar a que el movimiento se complete
-            # self.send_command("G90") # No enviamos G90 aquí para no interrumpir fluidez, pero el siguiente movimiento absoluto debe asegurarse de enviar G90.
-            # Sin embargo, el estado global en GRBL es modal. Si dejamos en G91, el siguiente G1 X10 se moverá +10.
-            # Es mejor restaurar G90 por seguridad.
-            self.send_command("G90")
-            return True
-        return False
+                self.log_callback(f"Enviando jog: {command}")
+            
+            # Enviar comando
+            if self.send_command(command):
+                # Actualizar posición (estimada)
+                self.position = new_position
+                
+                # Esperar movimiento
+                time.sleep(0.5) 
+                
+                # Restore Absolute Mode
+                self.send_command("G90")
+
+        # Iniciar hilo
+        threading.Thread(target=_jog_thread, daemon=True).start()
+        return True
 
 class GCodeGUI:
     def __init__(self, root):

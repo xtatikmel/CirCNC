@@ -137,7 +137,8 @@ class TestGCodeExecutionWorkflow:
 class TestManualControlWorkflow:
     """Test manual control (jog) workflows"""
     
-    def test_jog_within_limits(self):
+    @patch('threading.Thread')
+    def test_jog_within_limits(self, mock_thread):
         """Test jogging within machine limits"""
         controller = GCodeController()
         controller.port = MagicMock()
@@ -148,7 +149,11 @@ class TestManualControlWorkflow:
         
         # Jog in positive X direction
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 1.0)
+            
+            # Execute thread
+            args = mock_thread.call_args[1]
+            args['target']()
             
         assert result is True
         assert controller.position['x'] == 21
@@ -164,13 +169,14 @@ class TestManualControlWorkflow:
         
         # Try to jog beyond limit
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 10.0)
             
         # Should be blocked by limit check
         assert result is False
         assert controller.position['x'] == 35  # Position unchanged
         
-    def test_jog_all_directions(self):
+    @patch('threading.Thread')
+    def test_jog_all_directions(self, mock_thread):
         """Test jogging in all directions"""
         controller = GCodeController()
         controller.port = MagicMock()
@@ -184,8 +190,13 @@ class TestManualControlWorkflow:
         with patch.object(controller, 'send_command', return_value=True):
             for direction in directions:
                 initial_pos = controller.position.copy()
-                result = controller.jog(direction)
+                result = controller.jog(direction, 1.0)
                 assert result is True
+                
+                # Execute thread
+                args = mock_thread.call_args[1]
+                args['target']()
+                
                 # Position should have changed
                 assert controller.position != initial_pos
 

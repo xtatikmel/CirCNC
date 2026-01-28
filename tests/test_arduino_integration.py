@@ -25,12 +25,17 @@ class TestArduinoFirmwareIntegration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        result = controller.connect('COM1')
+        result = controller.connect('COM10')
         
         # Verify initialization steps
         assert result is True
         assert mock_port.reset_input_buffer.called
         assert mock_port.reset_output_buffer.called
+        
+        # Perform homing
+        with patch.object(controller, 'send_command', return_value=True):
+            controller.perform_homing_sequence()
+            
         # Verify homing sequence is performed
         assert controller.homing_complete is True
         
@@ -43,7 +48,7 @@ class TestArduinoFirmwareIntegration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Send G1 command
         controller.send_command("G1 X10 Y20 F1000")
@@ -61,7 +66,7 @@ class TestArduinoFirmwareIntegration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Send G90 command
         controller.send_command("G90")
@@ -79,7 +84,7 @@ class TestArduinoFirmwareIntegration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Send G91 command
         controller.send_command("G91")
@@ -97,7 +102,7 @@ class TestArduinoFirmwareIntegration:
         mock_serial.return_value = mock_port
         
         controller = GCodeController()
-        controller.connect('COM1')
+        controller.connect('COM10')
         
         # Send M300 commands for pen up/down
         controller.send_command("M300 S50")  # Pen up
@@ -134,7 +139,8 @@ class TestPositionTrackingAccuracy:
         assert controller.position['y'] == 20.3
         assert controller.position['z'] == 1.2
         
-    def test_position_tracking_after_movement(self):
+    @patch('threading.Thread')
+    def test_position_tracking_after_movement(self, mock_thread):
         """Test position tracking after manual movement"""
         controller = GCodeController()
         controller.port = MagicMock()
@@ -144,7 +150,12 @@ class TestPositionTrackingAccuracy:
         controller.position = {'x': 10, 'y': 15, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 5.0)
+            
+            # Execute the thread target manually
+            args = mock_thread.call_args[1]
+            target = args['target']
+            target()
             
         # Verify position was tracked
         assert controller.position['x'] == 15
@@ -261,7 +272,7 @@ class TestLimitSwitchVerification:
         controller.position = {'x': 40, 'y': 20, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -382,8 +393,12 @@ class TestCompleteHardwareWorkflow:
         controller = GCodeController()
         
         # 1. Connect to Arduino
-        result = controller.connect('COM1')
+        result = controller.connect('COM10')
         assert result is True
+        
+        # Perform homing
+        with patch.object(controller, 'send_command', return_value=True):
+            controller.perform_homing_sequence()
         assert controller.homing_complete is True
         
         # 2. Load G-code file
@@ -420,15 +435,27 @@ class TestCompleteHardwareWorkflow:
         controller.speed_var.get.return_value = "1"
         
         # Perform manual movements
+        # Perform manual movements
         with patch.object(controller, 'send_command', return_value=True):
             # Move X positive
-            result = controller.jog('x+')
+            result = controller.jog('x+', 1.0)
             assert result is True
+            
+            # Execute thread
+            args = mock_thread.call_args[1]
+            args['target']()
+
             assert controller.position['x'] == 1
             
             # Move Y positive
-            result = controller.jog('y+')
+            result = controller.jog('y+', 1.0)
             assert result is True
+
+            # Execute thread
+            args = mock_thread.call_args[1]
+            args['target']()
+
+            assert controller.position['y'] == 1
             assert controller.position['y'] == 1
             
             # Return to origin
