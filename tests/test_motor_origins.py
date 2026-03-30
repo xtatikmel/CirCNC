@@ -191,12 +191,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 1.0)
             
         # Position should increase
         assert controller.position['x'] == 11
@@ -206,12 +204,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x-')
+            controller.jog('x-', 1.0)
             
         # Position should decrease
         assert controller.position['x'] == 9
@@ -221,12 +217,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('y+')
+            controller.jog('y+', 1.0)
             
         # Position should increase
         assert controller.position['y'] == 11
@@ -236,12 +230,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('y-')
+            controller.jog('y-', 1.0)
             
         # Position should decrease
         assert controller.position['y'] == 9
@@ -251,12 +243,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('z+')
+            controller.jog('z+', 1.0)
             
         # Position should increase
         assert controller.position['z'] == 3
@@ -266,12 +256,10 @@ class TestMotorDirections:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('z-')
+            controller.jog('z-', 1.0)
             
         # Position should decrease
         assert controller.position['z'] == 1
@@ -291,12 +279,10 @@ class TestMotorStepCalculation:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "2"  # Medium speed: 5mm
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 5.0)
             
         # Position should increase by 5mm
         assert controller.position['x'] == 15
@@ -306,12 +292,10 @@ class TestMotorStepCalculation:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 1.0)
             
         assert controller.position['x'] == 11
         
@@ -320,12 +304,10 @@ class TestMotorStepCalculation:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "2"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 5.0)
             
         assert controller.position['x'] == 15
         
@@ -334,12 +316,10 @@ class TestMotorStepCalculation:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "3"
         controller.position = {'x': 10, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            controller.jog('x+')
+            controller.jog('x+', 10.0)
             
         assert controller.position['x'] == 20
 
@@ -352,12 +332,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 0, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x-')
+            result = controller.jog('x-', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -368,12 +346,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 40, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -384,12 +360,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 0, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('y-')
+            result = controller.jog('y-', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -400,12 +374,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 40, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('y+')
+            result = controller.jog('y+', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -416,12 +388,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 0}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('z-')
+            result = controller.jog('z-', 1.0)
             
         # Movement should be blocked
         assert result is False
@@ -432,12 +402,10 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.speed_var = Mock()
-        controller.speed_var.get.return_value = "1"
         controller.position = {'x': 10, 'y': 10, 'z': 5}
         
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('z+')
+            result = controller.jog('z+', 1.0)
             
         # Movement should be blocked
         assert result is False

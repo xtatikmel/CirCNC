@@ -15,62 +15,61 @@ from gctrl import GCodeController
 
 class TestConnectionWorkflow:
     """Test complete connection workflow"""
-    
-    @patch('serial.Serial')
+    @patch('gctrl.serial')
     @patch('threading.Thread')
-    def test_successful_connection(self, mock_thread, mock_serial):
+    def test_successful_connection(self, mock_thread, mock_serial_module):
         """Test successful connection workflow"""
         # Setup mock serial port
         mock_port = MagicMock()
         mock_port.is_open = True
-        mock_serial.return_value = mock_port
-        
+        mock_serial_module.Serial.return_value = mock_port
+
         controller = GCodeController()
         callback = Mock()
         controller.set_log_callback(callback)
-        
+
         # Connect to port
         result = controller.connect('COM1')
-        
+
         # Verify connection
         assert result is True
         assert controller.port_name == 'COM1'
         assert mock_port.reset_input_buffer.called
         assert mock_port.reset_output_buffer.called
-        
-    @patch('serial.Serial')
-    def test_connection_failure(self, mock_serial):
+
+    @patch('gctrl.serial')
+    def test_connection_failure(self, mock_serial_module):
         """Test connection failure handling"""
         # Simulate connection error
-        mock_serial.side_effect = serial.SerialException("Port not found")
-        
+        mock_serial_module.Serial.side_effect = Exception("Port not found")
+
         controller = GCodeController()
         callback = Mock()
         controller.set_log_callback(callback)
-        
+
         # Try to connect
-        result = controller.connect('COM99')
-        
+        result = controller.connect('COM10')
+
         # Verify failure handling
         assert result is False
         assert controller.port_name is None
-        
-    @patch('serial.Serial')
+
+    @patch('gctrl.serial')
     @patch('threading.Thread')
-    def test_disconnect_workflow(self, mock_thread, mock_serial):
+    def test_disconnect_workflow(self, mock_thread, mock_serial_module):
         """Test complete disconnect workflow"""
         # Setup connected controller
         mock_port = MagicMock()
         mock_port.is_open = True
-        mock_serial.return_value = mock_port
-        
+        mock_serial_module.Serial.return_value = mock_port
+
         controller = GCodeController()
         controller.connect('COM1')
-        
+
         # Disconnect
         with patch.object(controller, 'return_to_origin'):
             controller.disconnect()
-        
+
         # Verify cleanup
         assert controller.running is False
         assert mock_port.close.called
@@ -138,7 +137,8 @@ class TestGCodeExecutionWorkflow:
 class TestManualControlWorkflow:
     """Test manual control (jog) workflows"""
     
-    def test_jog_within_limits(self):
+    @patch('threading.Thread')
+    def test_jog_within_limits(self, mock_thread):
         """Test jogging within machine limits"""
         controller = GCodeController()
         controller.port = MagicMock()
@@ -149,7 +149,11 @@ class TestManualControlWorkflow:
         
         # Jog in positive X direction
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 1.0)
+            
+            # Execute thread
+            args = mock_thread.call_args[1]
+            args['target']()
             
         assert result is True
         assert controller.position['x'] == 21
@@ -165,13 +169,14 @@ class TestManualControlWorkflow:
         
         # Try to jog beyond limit
         with patch.object(controller, 'send_command', return_value=True):
-            result = controller.jog('x+')
+            result = controller.jog('x+', 10.0)
             
         # Should be blocked by limit check
         assert result is False
         assert controller.position['x'] == 35  # Position unchanged
         
-    def test_jog_all_directions(self):
+    @patch('threading.Thread')
+    def test_jog_all_directions(self, mock_thread):
         """Test jogging in all directions"""
         controller = GCodeController()
         controller.port = MagicMock()
@@ -185,8 +190,13 @@ class TestManualControlWorkflow:
         with patch.object(controller, 'send_command', return_value=True):
             for direction in directions:
                 initial_pos = controller.position.copy()
-                result = controller.jog(direction)
+                result = controller.jog(direction, 1.0)
                 assert result is True
+                
+                # Execute thread
+                args = mock_thread.call_args[1]
+                args['target']()
+                
                 # Position should have changed
                 assert controller.position != initial_pos
 
@@ -294,44 +304,44 @@ class TestLimitTestingWorkflow:
 
 class TestCompleteWorkflow:
     """Test complete end-to-end workflow"""
-    
-    @patch('serial.Serial')
-    @patch('threading.Thread')
-    @patch('builtins.open', mock_open(read_data='G1 X10 Y10\nG1 X20 Y20\nG1 X0 Y0\n'))
-    def test_complete_cnc_workflow(self, mock_thread, mock_serial):
+    def test_complete_cnc_workflow(self):
         """Test complete workflow: connect, home, load, execute, disconnect"""
-        # Setup
-        mock_port = MagicMock()
-        mock_port.is_open = True
-        mock_serial.return_value = mock_port
-        
-        controller = GCodeController()
-        callback = Mock()
-        controller.set_log_callback(callback)
-        
-        # 1. Connect
-        result = controller.connect('COM1')
-        assert result is True
-        
-        # 2. Load G-code
-        result = controller.load_gcode('test.gcode')
-        assert result is True
-        assert len(controller.gcode) == 3
-        
-        # 3. Start execution
-        with patch.object(controller, 'send_next_gcode_line'):
-            controller.start_streaming()
-        assert controller.streaming is True
-        
-        # 4. Stop execution
-        with patch.object(controller, 'return_to_origin'):
-            controller.stop_streaming()
-        assert controller.streaming is False
-        
-        # 5. Disconnect
-        with patch.object(controller, 'return_to_origin'):
-            controller.disconnect()
-        assert controller.running is False
+        # Use context managers for patches to keep decorator stack simple
+        with patch('gctrl.serial') as mock_serial_module, \
+             patch('threading.Thread') as mock_thread, \
+             patch('builtins.open', mock_open(read_data='G1 X10 Y10\nG1 X20 Y20\nG1 X0 Y0\n')):
+            # Setup
+            mock_port = MagicMock()
+            mock_port.is_open = True
+            mock_serial_module.Serial.return_value = mock_port
+
+            controller = GCodeController()
+            callback = Mock()
+            controller.set_log_callback(callback)
+
+            # 1. Connect
+            result = controller.connect('COM1')
+            assert result is True
+
+            # 2. Load G-code
+            result = controller.load_gcode('test.gcode')
+            assert result is True
+            assert len(controller.gcode) == 3
+
+            # 3. Start execution
+            with patch.object(controller, 'send_next_gcode_line'):
+                controller.start_streaming()
+            assert controller.streaming is True
+
+            # 4. Stop execution
+            with patch.object(controller, 'return_to_origin'):
+                controller.stop_streaming()
+            assert controller.streaming is False
+
+            # 5. Disconnect
+            with patch.object(controller, 'return_to_origin'):
+                controller.disconnect()
+            assert controller.running is False
 
 
 if __name__ == '__main__':

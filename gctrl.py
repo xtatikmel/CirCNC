@@ -33,6 +33,24 @@ class GCodeController:
         self.soft_limits_enabled = True
         self.last_command_time = 0
         self.command_timeout = 1.0  # 1 segundo de timeout
+        # Compatibilidad con instalaciones donde "serial" no es pyserial
+        # Guardamos un alias seguro para SerialException y comprobamos si
+        # serial.tools.list_ports está disponible.
+        try:
+            self._SerialException = getattr(serial, 'SerialException', Exception)
+        except Exception:
+            # Si 'serial' es un paquete distinto que lanza al inspeccionarlo,
+            # establecemos valores por defecto y evitamos usarlo directamente.
+            self._SerialException = Exception
+
+        # Comprobar de forma robusta si serial.tools.list_ports está disponible
+        try:
+            # Intentar importar list_ports directamente; esto funciona aunque
+            # `serial.tools` no aparezca como atributo en el módulo `serial`.
+            from serial.tools import list_ports  # type: ignore
+            self._has_list_ports = True
+        except Exception:
+            self._has_list_ports = False
         
     def set_log_callback(self, callback):
         self.log_callback = callback
@@ -45,28 +63,53 @@ class GCodeController:
         """Encuentra puertos seriales disponibles"""
         ports = []
         system = platform.system().lower()
-        
+        # Preferir serial.tools.list_ports.comports() si está disponible
         try:
-            if "windows" in system:
-                for i in range(1, 21):
+            if self._has_list_ports:
+                for p in serial.tools.list_ports.comports():
                     try:
-                        port = f"COM{i}"
-                        test_serial = serial.Serial(port, 9600, timeout=0.1)
-                        test_serial.close()
-                        ports.append(port)
-                    except serial.SerialException:
+                        ports.append(p.device)
+                    except Exception:
+                        # objeto inesperado, ignorar
                         pass
-            else:
-                patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
-                for pattern in patterns:
-                    for port in glob.glob(pattern):
+                return ports
+
+            # Si no hay list_ports, intentar sondear puertos probando abrilos
+            if hasattr(serial, 'Serial'):
+                if "windows" in system:
+                    # Probar COM1..COM256 (más seguro que sólo 1..20)
+                    for i in range(1, 257):
+                        port = f"COM{i}"
                         try:
                             test_serial = serial.Serial(port, 9600, timeout=0.1)
                             test_serial.close()
                             ports.append(port)
-                        except serial.SerialException:
+                        except Exception:
+                            # ignorar fallos al abrir
                             pass
+                else:
+                    patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
+                    for pattern in patterns:
+                        for port in glob.glob(pattern):
+                            try:
+                                test_serial = serial.Serial(port, 9600, timeout=0.1)
+                                test_serial.close()
+                                ports.append(port)
+                            except Exception:
+                                pass
+            else:
+                # No hay pyserial ni list_ports: intentar heurística pasiva
+                if "windows" in system:
+                    # Añadir nombres COM sin intentar abrirlos
+                    for i in range(1, 257):
+                        ports.append(f"COM{i}")
+                else:
+                    patterns = ['/dev/ttyUSB*', '/dev/ttyACM*', '/dev/tty.usb*', '/dev/cu.usb*']
+                    for pattern in patterns:
+                        for port in glob.glob(pattern):
+                            ports.append(port)
         except Exception as e:
+            # Capturar errores inesperados (por ejemplo, si 'serial' es un paquete extraño)
             if self.log_callback:
                 self.log_callback(f"Error buscando puertos: {str(e)}")
         
@@ -80,11 +123,20 @@ class GCodeController:
             return False
         
         try:
+            # Cerrar puerto existente si está abierto
             if self.port and self.port.is_open:
-                self.port.close()
-            
+                try:
+                    self.port.close()
+                    if self.log_callback:
+                        self.log_callback(f"Puerto anterior cerrado")
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al cerrar puerto anterior: {str(e)}")
+                self.port = None
+
             # Intentar abrir el puerto con diferentes configuraciones
             try:
+                # Configurar el puerto serial con los parámetros requeridos
                 self.port = serial.Serial(
                     port=port_name,
                     baudrate=9600,
@@ -94,37 +146,68 @@ class GCodeController:
                     timeout=1,
                     write_timeout=1
                 )
+                
+                # Guardar nombre de puerto
+                self.port_name = port_name
+
+                # Limpiar buffers si están disponibles
+                try:
+                    self.port.reset_input_buffer()
+                    self.port.reset_output_buffer()
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al limpiar buffers: {str(e)}")
+                
+                # Enviar comando de prueba al Arduino
+                try:
+                    self.port.write(b"G90\n")  # Usar G90 como comando de prueba
+                    if self.log_callback:
+                        self.log_callback("Comando de prueba enviado (G90)")
+                except Exception as e:
+                    if self.log_callback:
+                        self.log_callback(f"Error al enviar comando de prueba: {str(e)}")
+                
             except serial.SerialException as e:
+                if "PermissionError" in str(e) or "Acceso denegado" in str(e):
+                    if self.log_callback:
+                        self.log_callback(f"Error de permisos al abrir puerto {port_name}. Asegúrate de que no esté siendo usado por otro programa.")
+                    return False
+                elif "FileNotFoundError" in str(e):
+                    if self.log_callback:
+                        self.log_callback(f"Puerto {port_name} no encontrado. Verifica la conexión.")
+                    return False
+                else:
+                    if self.log_callback:
+                        self.log_callback(f"Error al abrir puerto {port_name}: {str(e)}")
+                    return False
+            except Exception as e:
+                # Si pyserial no está correctamente instalado, informar
                 if self.log_callback:
                     self.log_callback(f"Error al abrir puerto {port_name}: {str(e)}")
                 return False
             
-            self.port_name = port_name
-            
-            # Limpiar buffer
-            self.port.reset_input_buffer()
-            self.port.reset_output_buffer()
-            
             # Iniciar hilo de lectura
             read_thread = threading.Thread(target=self.read_responses, daemon=True)
             read_thread.start()
-            
-            # Enviar comando de prueba
+
+            # Enviar comando de prueba para verificar comunicación
             self.send_command("?")
             time.sleep(0.5)
-            
-            # Realizar secuencia de homing
-            self.perform_homing_sequence()
-            
+
             if self.log_callback:
                 self.log_callback(f"Conectado a {port_name}")
             return True
             
         except Exception as e:
+            # Registrar y mostrar el error, devolver False para que los tests puedan comprobar el fallo
             if self.log_callback:
                 self.log_callback(f"Error conectando a {port_name}: {str(e)}")
+            try:
+                messagebox.showerror("Error", f"Error conectando a {port_name}: {e}")
+            except Exception:
+                # En entornos sin GUI, messagebox puede fallar
+                pass
             return False
-    
     def check_limits(self, x=None, y=None, z=None):
         """Verifica si una posición está dentro de los límites"""
         if not self.soft_limits_enabled:
@@ -298,6 +381,12 @@ class GCodeController:
             self.streaming = True
             self.paused = False
             self.gcode_index = 0
+            
+            # Asegurar modo absoluto antes de empezar
+            if self.log_callback:
+                self.log_callback("Asegurando modo absoluto (G90)...")
+            self.send_command("G90")
+            
             self.send_next_gcode_line()
     
     def pause_streaming(self):
@@ -348,129 +437,76 @@ class GCodeController:
     def set_origin(self):
         """Establece la posición actual como origen"""
         if self.port and self.port.is_open:
-            self.send_command("G92 X0 Y0 Z0")
+            # Usar G10 L20 P1 para establecer el origen de trabajo (G54)
+            # Esto es más robusto que G92 y persiste mejor
+            self.send_command("G10 L20 P1 X0 Y0 Z0")
             self.origin_position = self.position.copy()
             self.origin_set = True
             if self.log_callback:
-                self.log_callback("Origen establecido en la posición actual")
+                self.log_callback("Origen establecido (G54) en posición actual")
             return True
         return False
-    
-    def test_limits(self):
-        """Prueba los límites de la máquina"""
-        # Secuencia de prueba más completa
-        commands = [
-            "G90",           # Modo absoluto
-            "G1 X0 Y0 Z0 F1000",   # Ir a origen
-            "G1 X50 F1000",        # Mover X a 50mm
-            "G1 X0 F1000",         # Volver a X=0
-            "G1 Y50 F1000",        # Mover Y a 50mm
-            "G1 Y0 F1000",         # Volver a Y=0
-            "G1 Z20 F1000",        # Mover Z a 20mm
-            "G1 Z0 F1000",         # Volver a Z=0
-            "G1 X25 Y25 F1000",    # Mover a punto intermedio
-            "G1 Z10 F1000",        # Subir Z
-            "G1 X0 Y0 F1000",      # Volver a origen
-            "G1 Z0 F1000"          # Bajar Z
-        ]
-        for cmd in commands:
-            self.send_command(cmd)
-            time.sleep(1)  # Esperar más tiempo entre movimientos
 
-    def perform_homing_sequence(self):
-        """Realiza la secuencia de homing para todos los ejes"""
-        if not self.port or not self.port.is_open:
-            return False
-
-        if self.log_callback:
-            self.log_callback("Iniciando secuencia de homing...")
-
-        # Secuencia de homing paso a paso
-        homing_sequence = [
-            "G90",           # Modo absoluto
-            "G21",           # Unidades en milímetros
-            "G91",           # Cambiar a modo incremental para homing
-            "$H",            # Comando de homing
-            "G90",           # Volver a modo absoluto
-            "G1X0Y0Z0F1000", # Mover a origen
-            "G92X0Y0Z0"      # Establecer origen en 0,0,0
-        ]
-
-        for cmd in homing_sequence:
-            if self.log_callback:
-                self.log_callback(f"Enviando comando: {cmd}")
-            if not self.send_command(cmd):
-                if self.log_callback:
-                    self.log_callback("Error en secuencia de homing")
-                return False
-            time.sleep(1)  # Esperar entre comandos
-
-        self.homing_complete = True
-        self.origin_set = True
-        self.origin_position = {'x': 0, 'y': 0, 'z': 0}
-        self.position = {'x': 0, 'y': 0, 'z': 0}  # Resetear posición actual
-        
-        if self.log_callback:
-            self.log_callback("Secuencia de homing completada")
-        return True
-
-    def home(self):
-        """Mover a posición de origen"""
+    def emergency_stop(self):
+        """Parada de emergencia"""
         if self.port and self.port.is_open:
-            if not self.homing_complete:
-                # Si no se ha realizado el homing, hacerlo ahora
-                return self.perform_homing_sequence()
-            else:
-                # Si ya se realizó el homing, solo mover a origen
-                self.send_command("G90")  # Modo absoluto
-                self.send_command("G1 X0 Y0 Z0 F1000")  # Mover a origen con velocidad especificada
-                if self.log_callback:
-                    self.log_callback("Retornando a origen")
-                return True
-        return False
+            try:
+                self.port.write(b'\x18')  # Ctrl+X
+            except Exception as e:
+                self.log(f"Error enviando parada de emergencia: {e}")
+            
+            self.stop_streaming()
+            if self.log_callback:
+                self.log_callback("¡PARADA DE EMERGENCIA ENVIADA!")
+            # Esperar un momento antes de volver a origen
+            # Nota: En emergencia real, quizás no queremos volver a origen automáticamente
+            # pero mantenemos el comportamiento original por ahora.
+            time.sleep(1)
+            # self.return_to_origin() # Desactivado por seguridad tras emergencia
 
-    def jog(self, direction):
-        """Movimiento manual"""
+    def jog(self, direction, speed_mm):
+        """Movimiento manual (Ejecutado en hilo para no bloquear GUI)"""
         if not self.port or not self.port.is_open:
             if self.log_callback:
                 self.log_callback("Puerto no conectado")
             return False
 
-        # Obtener velocidad según selección
-        speed = {
-            "1": "1",    # Lenta: 1mm
-            "2": "5",    # Media: 5mm
-            "3": "10"    # Rápida: 10mm
-        }[self.speed_var.get()]
-        
-        # Enviar comando de movimiento
-        axis = direction[0].upper()  # X, Y o Z
-        sign = "+" if direction[1] == "+" else "-"
-        
-        # Calcular nueva posición
-        new_position = self.position.copy()
-        move_distance = float(speed) if sign == "+" else -float(speed)
-        new_position[axis.lower()] += move_distance
-        
-        # Verificar límites
-        if not self.check_limits(**new_position):
+        def _jog_thread():
+            # Enviar comando de movimiento
+            axis = direction[0].upper()  # X, Y o Z
+            sign = "+" if direction[1] == "+" else "-"
+            
+            # Calcular nueva posición estimada (para UI)
+            new_position = self.position.copy()
+            move_distance = float(speed_mm) if sign == "+" else -float(speed_mm)
+            new_position[axis.lower()] += move_distance
+            
+            # Verificar límites
+            if not self.check_limits(**new_position):
+                if self.log_callback:
+                    self.log_callback("Movimiento cancelado: fuera de límites")
+                return
+
+            # G91 = Incremental, G1 = Linear Move, F1000 = Feedrate
+            command = f"G91G1{axis}{sign}{speed_mm}F1000"
+            
             if self.log_callback:
-                self.log_callback("Movimiento cancelado: fuera de límites")
-            return False
-        
-        # Enviar comando de movimiento
-        command = f"G91G1{axis}{sign}{speed}F1000"
-        
-        if self.log_callback:
-            self.log_callback(f"Enviando comando de movimiento: {command}")
-        
-        # Enviar comando
-        if self.send_command(command):
-            # Actualizar posición
-            self.position = new_position
-            time.sleep(0.5)  # Esperar a que el movimiento se complete
-            return True
-        return False
+                self.log_callback(f"Enviando jog: {command}")
+            
+            # Enviar comando
+            if self.send_command(command):
+                # Actualizar posición (estimada)
+                self.position = new_position
+                
+                # Esperar movimiento
+                time.sleep(0.5) 
+                
+                # Restore Absolute Mode
+                self.send_command("G90")
+
+        # Iniciar hilo
+        threading.Thread(target=_jog_thread, daemon=True).start()
+        return True
 
 class GCodeGUI:
     def __init__(self, root):
@@ -592,20 +628,42 @@ class GCodeGUI:
         main_frame.rowconfigure(0, weight=1)
     
     def update_ports(self):
-        """Actualiza la lista de puertos disponibles"""
+        """Actualiza la lista de puertos disponibles en la GUI usando el controller."""
         ports = self.controller.find_serial_ports()
         self.port_combo['values'] = ports
         if ports:
             self.port_combo.set(ports[0])
-    
+        else:
+            self.log("No se encontraron puertos disponibles. Verifica la conexión del dispositivo.")
+
     def toggle_connection(self):
-        """Conecta/desconecta el puerto serial"""
-        if not self.controller.port or not self.controller.port.is_open:
-            if self.controller.connect(self.port_var.get()):
+        """Conecta/desconecta el puerto serial desde la GUI"""
+        if not self.controller.port or not getattr(self.controller.port, 'is_open', False):
+            port = self.port_var.get()
+            if not port:
+                messagebox.showerror("Error de conexión", "No se ha seleccionado ningún puerto. Por favor, selecciona un puerto válido.")
+                return
+                
+            if self.controller.connect(port):
                 self.connect_btn.configure(text="Desconectar")
                 self.start_btn.configure(state=tk.NORMAL)
                 self.emergency_btn.configure(state=tk.NORMAL)
-                self.log("Conectado a " + self.controller.port_name)
+                self.log("Conectado a " + (self.controller.port_name or ""))
+            else:
+                # Si la conexión falla, mostrar un diálogo con opciones para solucionar el problema
+                respuesta = messagebox.askretrycancel(
+                    "Error de conexión", 
+                    f"No se pudo conectar al puerto {port}.\n\n"
+                    "Posibles soluciones:\n"
+                    "1. Cierra otros programas que puedan estar usando el puerto\n"
+                    "2. Desconecta y vuelve a conectar el dispositivo\n"
+                    "3. Ejecuta el programa como administrador\n"
+                    "4. Selecciona un puerto diferente\n\n"
+                    "¿Quieres intentar conectar de nuevo?"
+                )
+                if respuesta:
+                    # Actualizar puertos y reintentar
+                    self.update_ports()
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")
@@ -614,7 +672,7 @@ class GCodeGUI:
             self.stop_btn.configure(state=tk.DISABLED)
             self.emergency_btn.configure(state=tk.DISABLED)
             self.log("Desconectado")
-    
+
     def open_file(self):
         """Abre diálogo para seleccionar archivo G-code"""
         filename = filedialog.askopenfilename(
@@ -682,38 +740,29 @@ class GCodeGUI:
         """Mover a posición de origen"""
         if self.controller.port and self.controller.port.is_open:
             if self.controller.origin_set:
-                # Si hay un origen establecido, ir a esa posición
+                # Si hay un origen establecido, ir a esa posición (0,0,0 en coordenadas de trabajo)
                 self.controller.send_command("G90")  # Modo absoluto
-                self.controller.send_command(f"G1 X{self.controller.origin_position['x']} Y{self.controller.origin_position['y']} Z{self.controller.origin_position['z']} F1000")
+                self.controller.send_command("G1 X0 Y0 Z0 F1000")
                 if self.controller.log_callback:
-                    self.controller.log_callback("Retornando a origen establecido")
+                    self.controller.log_callback("Retornando a origen establecido (Work 0,0,0)")
             else:
-                # Si no hay origen establecido, usar el comando de home
+                # Si no hay origen establecido, usar el comando de home de máquina
                 self.controller.send_command("$H")
                 if self.controller.log_callback:
-                    self.controller.log_callback("Enviando comando de home")
+                    self.controller.log_callback("Enviando comando de home ($H)")
             # Esperar un momento y actualizar posición
             self.root.after(1000, self.controller.get_status)
 
     def jog(self, direction):
         """Movimiento manual"""
-        if self.controller.port and self.controller.port.is_open:
-            # Obtener velocidad según selección
-            speed = {
-                "1": "1",    # Lenta: 1mm
-                "2": "5",    # Media: 5mm
-                "3": "10"    # Rápida: 10mm
-            }[self.speed_var.get()]
-            
-            # Extraer el eje y la dirección
-            axis = direction[0].upper()
-            is_positive = direction[1] == '+'
-            distance = speed if is_positive else f"-{speed}"
-            
-            # Enviar comando en formato compatible con el Arduino
-            command = f"G0 {axis}{distance}"
-            self.controller.send_command(command)
-            self.log(f"Movimiento manual: {axis} {distance}")
+        speed_map = {
+            "1": 1.0,    # Lenta: 1mm
+            "2": 5.0,    # Media: 5mm
+            "3": 10.0    # Rápida: 10mm
+        }
+        speed_key = self.speed_var.get()
+        speed_mm = speed_map.get(speed_key, 1.0)
+        self.controller.jog(direction, speed_mm)
 
     def update_position(self):
         """Actualiza la posición mostrada en la interfaz"""
