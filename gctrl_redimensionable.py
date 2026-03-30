@@ -20,6 +20,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.patches as patches
 import re
+import math
 
 # ===== PARSER DE G-CODE =====
 class GCodeParser:
@@ -32,6 +33,7 @@ class GCodeParser:
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.total_distance = 0.0
     
     def parse(self, filename):
         """Parsea archivo G-code"""
@@ -41,6 +43,7 @@ class GCodeParser:
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.total_distance = 0.0
         
         try:
             with open(filename, 'r') as f:
@@ -78,6 +81,9 @@ class GCodeParser:
             if y_match:
                 y_val = float(y_match.group(1))
                 new_y = y_val if self.mode_absolute else self.current_y + y_val
+            
+            dist = math.sqrt((new_x - self.current_x)**2 + (new_y - self.current_y)**2)
+            self.total_distance += dist
             
             self.current_x = new_x
             self.current_y = new_y
@@ -451,6 +457,10 @@ class GCodeGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.update_position()
         self.update_progress()
+        
+        # Estado del cronómetro
+        self.job_seconds = 0
+        self.update_timer()
     
     def create_widgets(self):
         """Crea interfaz con paneles redimensionables"""
@@ -606,19 +616,36 @@ class GCodeGUI:
         progress_frame = ttk.LabelFrame(right_frame, text="Progreso", padding="5")
         progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
         
+        self.time_label = ttk.Label(progress_frame, text="⏱️ Estimado F1000: --m --s | F2000: --m --s", font=("Arial", 10, "bold"), foreground="green")
+        self.time_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        
         self.progress_var = tk.IntVar()
         self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100, length=200)
-        self.progress_bar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        self.progress_label = ttk.Label(progress_frame, text="0 / 0 líneas (0%)", font=("Arial", 9, "bold"))
-        self.progress_label.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        status_inner = ttk.Frame(progress_frame)
+        status_inner.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        self.progress_label = ttk.Label(status_inner, text="0 / 0 líneas (0%)", font=("Arial", 9, "bold"))
+        self.progress_label.pack(side=tk.LEFT)
+        self.elapsed_time_label = ttk.Label(status_inner, text="⏳ Transcurrido: 00:00", font=("Arial", 9, "bold"), foreground="blue")
+        self.elapsed_time_label.pack(side=tk.RIGHT)
         
-        # === FILA 2: LOG ===
+        # === FILA 2: LOG Y TERMINAL MANUAL ===
         log_frame = ttk.LabelFrame(main_frame, text="Log de Comandos", padding="5")
         log_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         self.log_area = scrolledtext.ScrolledText(log_frame, width=200, height=8, font=("Courier", 8))
         self.log_area.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Terminal Manual
+        terminal_frame = ttk.Frame(log_frame)
+        terminal_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(5,0))
+        ttk.Label(terminal_frame, text="Terminal Manual:", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        self.manual_cmd_var = tk.StringVar()
+        self.manual_cmd_entry = ttk.Entry(terminal_frame, textvariable=self.manual_cmd_var, width=50)
+        self.manual_cmd_entry.pack(side=tk.LEFT, padx=5)
+        self.manual_cmd_entry.bind('<Return>', lambda e: self.send_manual_command())
+        ttk.Button(terminal_frame, text="Enviar Comandos (Enter)", command=self.send_manual_command).pack(side=tk.LEFT)
         
         # Configurar pesos
         self.root.columnconfigure(0, weight=1)
@@ -631,6 +658,35 @@ class GCodeGUI:
     def jog_step(self, axis, direction):
         """Llama al controlador con velocidad actual"""
         self.controller.jog_step(axis, direction, self.controller.current_speed)
+        
+    def send_manual_command(self):
+        cmd = self.manual_cmd_var.get().strip()
+        if cmd:
+            if not self.controller.port or not self.controller.port.is_open:
+                messagebox.showwarning("Terminal", "Conecta la placa primero para enviar comandos.")
+                return
+            self.log(f"Teclado: {cmd}")
+            self.controller.send_command(cmd)
+            self.manual_cmd_var.set("")
+            
+    def update_time_estimation(self):
+        """Calcula el tiempo estimado basado en distintas velocidades (F) y M300 delays"""
+        # +0.5s por comando de servo (constante)
+        sec_servo = sum(1 for line in self.controller.gcode if "M300" in line.upper()) * 0.5
+        
+        # Tiempo a F1000 (1000 mm/min = 16.66 mm/seg)
+        sec_move_1000 = self.parser.total_distance / 16.66
+        total_sec_1000 = sec_move_1000 + sec_servo
+        mins_1000 = int(total_sec_1000 // 60)
+        secs_1000 = int(total_sec_1000 % 60)
+        
+        # Tiempo a F2000 (2000 mm/min = 33.33 mm/seg)
+        sec_move_2000 = self.parser.total_distance / 33.33
+        total_sec_2000 = sec_move_2000 + sec_servo
+        mins_2000 = int(total_sec_2000 // 60)
+        secs_2000 = int(total_sec_2000 % 60)
+        
+        self.time_label.configure(text=f"⏱️ Estimado F1000: {mins_1000}m {secs_1000}s | F2000: {mins_2000}m {secs_2000}s")
     
     def set_speed(self, speed_type):
         self.controller.set_speed(speed_type)
@@ -673,6 +729,7 @@ class GCodeGUI:
                 
                 if self.parser.parse(fn):
                     self.plot_gcode()
+                    self.update_time_estimation()
                     self.log(f"✅ Visualización actualizada: {len(self.parser.x_points)} puntos")
                 
                 self.start_btn.configure(state=tk.NORMAL)
@@ -767,6 +824,10 @@ class GCodeGUI:
         self.start_btn.configure(state=tk.DISABLED)
         self.pause_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.NORMAL)
+        
+        # Reiniciar cronómetro si es inicio limpio
+        if self.controller.gcode_index == 0:
+            self.job_seconds = 0
     
     def pause_stream(self):
         self.controller.pause_streaming()
@@ -796,6 +857,14 @@ class GCodeGUI:
                 self.canvas.draw_idle()
                 
         self.root.after(200, self.update_position)
+        
+    def update_timer(self):
+        if self.controller.streaming and not self.controller.paused:
+            self.job_seconds += 1
+            mins = self.job_seconds // 60
+            secs = self.job_seconds % 60
+            self.elapsed_time_label.configure(text=f"⏳ Transcurrido: {mins:02d}:{secs:02d}")
+        self.root.after(1000, self.update_timer)
     
     def update_progress(self):
         if self.controller.gcode:
