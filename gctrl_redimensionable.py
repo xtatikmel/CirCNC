@@ -439,7 +439,7 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("CNC Plotter - Control Avanzado con Paneles Redimensionables")
+        self.root.title("CNC Plotter - Control Avanzado - Paradoja Devs")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
@@ -550,6 +550,7 @@ class GCodeGUI:
         self.ax.grid(True, alpha=0.3)
         self.ax.set_xlim(-5, 95)
         self.ax.set_ylim(-5, 95)
+        self.ax.set_aspect('equal', adjustable='box')
         
         # Límites
         rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
@@ -686,6 +687,7 @@ class GCodeGUI:
         self.ax.grid(True, alpha=0.3)
         self.ax.set_xlim(-5, 95)
         self.ax.set_ylim(-5, 95)
+        self.ax.set_aspect('equal', adjustable='box')
         
         # Límites
         rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
