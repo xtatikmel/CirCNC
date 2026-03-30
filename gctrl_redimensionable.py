@@ -97,11 +97,15 @@ class GCodeController:
         self.gcode_index = 0
         
         self.position = {'x': 0.0, 'y': 0.0, 'z': 1.0}
+        self.mpos = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.offset = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.servo_angle = 50  # Ángulo inicial asumido (arriba)
+        
         
         self.machine_limits = {
-            'x': {'min': 0, 'max': 40},
-            'y': {'min': 0, 'max': 40},
-            'z': {'min': 0, 'max': 1}
+            'x': {'min': -100, 'max': 100},
+            'y': {'min': -100, 'max': 100},
+            'z': {'min': -5, 'max': 5}
         }
         
         self.SPEEDS = {
@@ -191,15 +195,31 @@ class GCodeController:
                     response = self.port.readline().decode().strip()
                     
                     if response:
-                        self.log(f"← {response}")
-                        
                         if response.startswith("<"):
                             try:
-                                pos_str = response.split("MPos:")[1].split("|")[0]
-                                x, y, z = map(float, pos_str.split(","))
-                                self.position = {'x': x, 'y': y, 'z': z}
+                                if "WPos:" in response:
+                                    pos_str = response.split("WPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.position = {'x': x, 'y': y, 'z': z}
+                                elif "MPos:" in response:
+                                    pos_str = response.split("MPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.mpos = {'x': x, 'y': y, 'z': z}
+                                    
+                                    if "WCO:" in response:
+                                        wco_str = response.split("WCO:")[1].split("|")[0].split(">")[0]
+                                        ox, oy, oz = map(float, wco_str.split(","))
+                                        self.position = {'x': x - ox, 'y': y - oy, 'z': z - oz}
+                                    else:
+                                        self.position = {
+                                            'x': x - self.offset.get('x', 0.0),
+                                            'y': y - self.offset.get('y', 0.0),
+                                            'z': z - self.offset.get('z', 0.0)
+                                        }
                             except:
                                 pass
+                        else:
+                            self.log(f"← {response}")
                 
                 time.sleep(0.01)
             except Exception as e:
@@ -216,7 +236,8 @@ class GCodeController:
                     command = command + '\n'
                 
                 self.port.write(command.encode())
-                self.log(f"→ {command.strip()}")
+                if command.strip() != "?":
+                    self.log(f"→ {command.strip()}")
                 return True
         except Exception as e:
             self.log(f"❌ Error: {str(e)}")
@@ -243,7 +264,20 @@ class GCodeController:
         axis = axis.upper()
         speed_mm = self.SPEEDS.get(speed_type, 1.0)
         
-        # Calcular nueva posición
+        # Calcular nueva posición / Control de Servo Z
+        if axis == 'Z':
+            step_deg = int(speed_mm * 10) # 0.5 -> 5°, 1.0 -> 10°, 2.0 -> 20°
+            if direction == '+':
+                self.servo_angle += step_deg
+            else:
+                self.servo_angle -= step_deg
+                
+            self.servo_angle = max(0, min(180, self.servo_angle)) # Límite físico del servo
+            
+            self.send_command(f"M300 S{self.servo_angle}")
+            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Velocidad {speed_type}")
+            return True
+        
         new_pos = self.position.copy()
         if direction == '+':
             new_pos[axis.lower()] += speed_mm
@@ -291,18 +325,17 @@ class GCodeController:
         if not self.port or not self.port.is_open:
             return False
         
-        self.log("📌 Estableciendo origen...")
+        self.log("📌 Estableciendo origen (G92)...")
         commands = [
-            "G90",
-            "G1 X0 Y0",
-            "G1 Z1"
+            "G92 X0 Y0 Z0"  # Establece las coordenadas actuales como 0,0,0
         ]
         
         for cmd in commands:
             self.send_command(cmd)
             time.sleep(0.3)
-        
-        self.position = {'x': 0.0, 'y': 0.0, 'z': 1.0}
+            
+        self.offset = self.mpos.copy()
+        self.position = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         time.sleep(0.2)
         self.send_command("?")
         self.log("✅ Origen establecido")
@@ -344,8 +377,20 @@ class GCodeController:
                     continue
                 
                 line = self.gcode[self.gcode_index]
+                
+                # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
+                if "M300" in line.upper():
+                    match = re.search(r'S(\d+)', line.upper())
+                    if match:
+                        self.servo_angle = int(match.group(1))
+                        
                 self.send_command(line)
                 self.gcode_index += 1
+                
+                # Pedir actualización de posición (estado) cada 2 líneas para la UI
+                if self.gcode_index % 2 == 0:
+                    self.send_command("?")
+                    
                 time.sleep(0.3)
             
             if self.streaming:
@@ -671,7 +716,8 @@ class GCodeGUI:
     def update_position(self):
         self.x_label.configure(text=f"{self.controller.position['x']:.2f} mm")
         self.y_label.configure(text=f"{self.controller.position['y']:.2f} mm")
-        self.z_label.configure(text=f"{self.controller.position['z']:.2f}")
+        # Mostramos el ángulo real del servo para Z
+        self.z_label.configure(text=f"{self.controller.servo_angle}°")
         self.root.after(200, self.update_position)
     
     def update_progress(self):
