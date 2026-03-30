@@ -109,9 +109,11 @@ class GCodeController:
         }
         
         self.SPEEDS = {
+            'muy_lento': 0.1,
             'lento': 0.5,
             'normal': 1.0,
-            'rapido': 2.0
+            'rapido': 2.0,
+            'muy_rapido': 5.0
         }
         self.current_speed = 'normal'
         
@@ -472,12 +474,16 @@ class GCodeGUI:
         speed_frame = ttk.LabelFrame(control_frame, text="Velocidad", padding="5")
         speed_frame.grid(row=0, column=4, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
+        ttk.Button(speed_frame, text="🐌 M.LENTO", 
+                   command=lambda: self.set_speed('muy_lento'), width=9).grid(row=0, column=0, padx=1)
         ttk.Button(speed_frame, text="🐢 LENTO", 
-                   command=lambda: self.set_speed('lento'), width=10).grid(row=0, column=0, padx=2)
-        ttk.Button(speed_frame, text="🚗 NORMAL", 
-                   command=lambda: self.set_speed('normal'), width=10).grid(row=0, column=1, padx=2)
-        ttk.Button(speed_frame, text="🚀 RÁPIDO", 
-                   command=lambda: self.set_speed('rapido'), width=10).grid(row=0, column=2, padx=2)
+                   command=lambda: self.set_speed('lento'), width=8).grid(row=0, column=1, padx=1)
+        ttk.Button(speed_frame, text="🚶 NORMAL", 
+                   command=lambda: self.set_speed('normal'), width=9).grid(row=0, column=2, padx=1)
+        ttk.Button(speed_frame, text="🚗 RÁPIDO", 
+                   command=lambda: self.set_speed('rapido'), width=9).grid(row=0, column=3, padx=1)
+        ttk.Button(speed_frame, text="🚀 M.RÁPIDO", 
+                   command=lambda: self.set_speed('muy_rapido'), width=10).grid(row=0, column=4, padx=1)
         
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=4, columnspan=3)
@@ -525,6 +531,10 @@ class GCodeGUI:
         self.load_btn = ttk.Button(left_frame, text="📂 Cargar G-code", command=self.open_file, width=30)
         self.load_btn.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
         
+        # Botón centrar en origen
+        self.normalize_btn = ttk.Button(left_frame, text="🎯 Centrar diseño en Origen (0,0)", command=self.normalize_gcode, state=tk.DISABLED, width=30)
+        self.normalize_btn.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
+        
         # PANEL CENTRAL: VISUALIZACIÓN
         center_frame = ttk.Frame(paned)
         paned.add(center_frame, weight=2)
@@ -545,6 +555,9 @@ class GCodeGUI:
         rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
         self.ax.add_patch(rect)
         self.ax.text(45, -3, 'Límites: 90×90mm', ha='center', fontsize=9, color='red')
+        
+        # Inicializar punto cruz
+        self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=center_frame)
         self.canvas.get_tk_widget().grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -662,6 +675,7 @@ class GCodeGUI:
                     self.log(f"✅ Visualización actualizada: {len(self.parser.x_points)} puntos")
                 
                 self.start_btn.configure(state=tk.NORMAL)
+                self.normalize_btn.configure(state=tk.NORMAL)
     
     def plot_gcode(self):
         """Dibuja trayectoria de G-code"""
@@ -686,9 +700,63 @@ class GCodeGUI:
                 self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=12, label='Final')
             self.ax.legend(loc='upper right', fontsize=10)
         
+        # Re-crear punto de rastreo ya que ax.clear() lo destruyó
+        self.machine_dot, = self.ax.plot([self.controller.position['x']], [self.controller.position['y']], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
+        
         self.fig.tight_layout()
         self.canvas.draw()
     
+    def normalize_gcode(self):
+        """Traslada las coordenadas de todo el Gcode para que el punto más bajo/izquierdo toque el origen (0,0)"""
+        if not self.parser.x_points or not self.controller.gcode:
+            return
+            
+        min_x = min(self.parser.x_points)
+        min_y = min(self.parser.y_points)
+        
+        # Si ya está alineado (con margen de 0.1mm), no hacemos nada
+        if abs(min_x) < 0.1 and abs(min_y) < 0.1:
+            self.log("✅ El G-code ya está alineado al origen (0,0)")
+            return
+            
+        self.log(f"🔧 Desplazando diseño... Offset aplicado: X {-min_x:.2f}mm, Y {-min_y:.2f}mm")
+        
+        # Modificar las líneas de G-code virtualmente en memoria
+        new_gcode = []
+        for line in self.controller.gcode:
+            new_line = line
+            
+            # Buscamos y reemplazamos coord X
+            x_match = re.search(r'X([-+]?\d+\.?\d*)', new_line)
+            if x_match:
+                x_val = float(x_match.group(1))
+                new_x = x_val - min_x
+                new_line = new_line[:x_match.start(1)] + f"{new_x:.3f}" + new_line[x_match.end(1):]
+                
+            # Buscamos y reemplazamos coord Y
+            y_match = re.search(r'Y([-+]?\d+\.?\d*)', new_line)
+            if y_match:
+                y_val = float(y_match.group(1))
+                new_y = y_val - min_y
+                new_line = new_line[:y_match.start(1)] + f"{new_y:.3f}" + new_line[y_match.end(1):]
+                
+            new_gcode.append(new_line)
+            
+        self.controller.gcode = new_gcode
+        
+        # Actualizar puntos matemáticos del parser instantáneamente
+        self.parser.x_points = [x - min_x for x in self.parser.x_points]
+        self.parser.y_points = [y - min_y for y in self.parser.y_points]
+        
+        # Actualizar área de texto para mostrar las nuevas coordenadas
+        self.gcode_area.delete(1.0, tk.END)
+        for i, line in enumerate(self.controller.gcode[:40], 1):
+            self.gcode_area.insert(tk.END, f"{i:3d}: {line}\n")
+            
+        # Repintar la UI
+        self.plot_gcode()
+        self.log("✅ Diseño re-centrado con éxito en (0,0)")
+
     def set_origin(self):
         self.controller.set_origin()
     
@@ -718,6 +786,13 @@ class GCodeGUI:
         self.y_label.configure(text=f"{self.controller.position['y']:.2f} / 90.00 mm")
         # Mostramos el ángulo real del servo para Z
         self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
+        
+        # Animación del punto cruz rastreador
+        if hasattr(self, 'machine_dot'):
+            self.machine_dot.set_data([self.controller.position['x']], [self.controller.position['y']])
+            if self.controller.streaming or getattr(self.controller, 'mpos', None):
+                self.canvas.draw_idle()
+                
         self.root.after(200, self.update_position)
     
     def update_progress(self):
@@ -735,7 +810,6 @@ class GCodeGUI:
         if messagebox.askokcancel("Salir", "¿Cerrar aplicación?"):
             self.controller.disconnect()
             self.root.destroy()
-
 
 def main():
     root = tk.Tk()
