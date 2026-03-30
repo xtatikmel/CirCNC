@@ -670,19 +670,22 @@ class GCodeGUI:
             self.manual_cmd_var.set("")
             
     def update_time_estimation(self):
-        """Calcula el tiempo estimado basado en distintas velocidades (F) y M300 delays"""
+        """Calcula el tiempo estimado basado en distintas velocidades (F) y retrasos del software/hardware"""
         # +0.5s por comando de servo (constante)
         sec_servo = sum(1 for line in self.controller.gcode if "M300" in line.upper()) * 0.5
         
+        # En el bucle de envío (start_stream), hay un time.sleep(0.3) forzado por cada comando
+        sec_software_delay = len(self.controller.gcode) * 0.3
+        
         # Tiempo a F1000 (1000 mm/min = 16.66 mm/seg)
         sec_move_1000 = self.parser.total_distance / 16.66
-        total_sec_1000 = sec_move_1000 + sec_servo
+        total_sec_1000 = sec_move_1000 + sec_servo + sec_software_delay
         mins_1000 = int(total_sec_1000 // 60)
         secs_1000 = int(total_sec_1000 % 60)
         
         # Tiempo a F2000 (2000 mm/min = 33.33 mm/seg)
         sec_move_2000 = self.parser.total_distance / 33.33
-        total_sec_2000 = sec_move_2000 + sec_servo
+        total_sec_2000 = sec_move_2000 + sec_servo + sec_software_delay
         mins_2000 = int(total_sec_2000 // 60)
         secs_2000 = int(total_sec_2000 % 60)
         
