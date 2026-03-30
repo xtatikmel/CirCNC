@@ -250,8 +250,8 @@ float parseFloat(char code, float defaultValue) {
 
 // ===== VERIFICAR LÍMITES =====
 bool checkLimits(float x, float y) {
-  if (x < 0 || x > X_LIMIT_MM) return false;
-  if (y < 0 || y > Y_LIMIT_MM) return false;
+  if (x < -100.0 || x > 200.0) return false;
+  if (y < -100.0 || y > 200.0) return false;
   return true;
 }
 

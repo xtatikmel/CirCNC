@@ -284,14 +284,14 @@ class GCodeController:
         else:
             new_pos[axis.lower()] -= speed_mm
         
-        # Verificar límites
-        if not self.check_limits(
-            x=new_pos['x'] if axis == 'X' else None,
-            y=new_pos['y'] if axis == 'Y' else None,
-            z=new_pos['z'] if axis == 'Z' else None
-        ):
-            self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
-            return False
+        # Verificar límites (Comentado para permitir control libre al buscar el origen)
+        # if not self.check_limits(
+        #     x=new_pos['x'] if axis == 'X' else None,
+        #     y=new_pos['y'] if axis == 'Y' else None,
+        #     z=new_pos['z'] if axis == 'Z' else None
+        # ):
+        #     self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
+        #     return False
         
         # Enviar comando G-code
         sign = "+" if direction == "+" else ""
@@ -538,13 +538,13 @@ class GCodeGUI:
         self.ax.set_ylabel('Y (mm)', fontsize=10)
         self.ax.set_title('Trayectoria CNC', fontsize=12)
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_xlim(-5, 45)
-        self.ax.set_ylim(-5, 45)
+        self.ax.set_xlim(-5, 95)
+        self.ax.set_ylim(-5, 95)
         
         # Límites
-        rect = patches.Rectangle((0, 0), 40, 40, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
+        rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
         self.ax.add_patch(rect)
-        self.ax.text(20, -3, 'Límites: 40×40mm', ha='center', fontsize=9, color='red')
+        self.ax.text(45, -3, 'Límites: 90×90mm', ha='center', fontsize=9, color='red')
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=center_frame)
         self.canvas.get_tk_widget().grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -670,13 +670,13 @@ class GCodeGUI:
         self.ax.set_ylabel('Y (mm)', fontsize=10)
         self.ax.set_title('Trayectoria CNC', fontsize=12)
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_xlim(-5, 45)
-        self.ax.set_ylim(-5, 45)
+        self.ax.set_xlim(-5, 95)
+        self.ax.set_ylim(-5, 95)
         
         # Límites
-        rect = patches.Rectangle((0, 0), 40, 40, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
+        rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
         self.ax.add_patch(rect)
-        self.ax.text(20, -3, 'Límites: 40×40mm', ha='center', fontsize=9, color='red')
+        self.ax.text(45, -3, 'Límites: 90×90mm', ha='center', fontsize=9, color='red')
         
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
@@ -714,10 +714,10 @@ class GCodeGUI:
         self.log_area.see(tk.END)
     
     def update_position(self):
-        self.x_label.configure(text=f"{self.controller.position['x']:.2f} mm")
-        self.y_label.configure(text=f"{self.controller.position['y']:.2f} mm")
+        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / 90.00 mm")
+        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / 90.00 mm")
         # Mostramos el ángulo real del servo para Z
-        self.z_label.configure(text=f"{self.controller.servo_angle}°")
+        self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
         self.root.after(200, self.update_position)
     
     def update_progress(self):
