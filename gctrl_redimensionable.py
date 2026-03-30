@@ -475,15 +475,15 @@ class GCodeGUI:
         speed_frame.grid(row=0, column=4, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
         ttk.Button(speed_frame, text="🐌 M.LENTO", 
-                   command=lambda: self.set_speed('muy_lento'), width=9).grid(row=0, column=0, padx=1)
+                   command=lambda: self.set_speed('muy_lento'), width=12).grid(row=0, column=0, padx=2)
         ttk.Button(speed_frame, text="🐢 LENTO", 
-                   command=lambda: self.set_speed('lento'), width=8).grid(row=0, column=1, padx=1)
+                   command=lambda: self.set_speed('lento'), width=12).grid(row=0, column=1, padx=2)
         ttk.Button(speed_frame, text="🚶 NORMAL", 
-                   command=lambda: self.set_speed('normal'), width=9).grid(row=0, column=2, padx=1)
+                   command=lambda: self.set_speed('normal'), width=12).grid(row=0, column=2, padx=2)
         ttk.Button(speed_frame, text="🚗 RÁPIDO", 
-                   command=lambda: self.set_speed('rapido'), width=9).grid(row=0, column=3, padx=1)
+                   command=lambda: self.set_speed('rapido'), width=12).grid(row=0, column=3, padx=2)
         ttk.Button(speed_frame, text="🚀 M.RÁPIDO", 
-                   command=lambda: self.set_speed('muy_rapido'), width=10).grid(row=0, column=4, padx=1)
+                   command=lambda: self.set_speed('muy_rapido'), width=12).grid(row=0, column=4, padx=2)
         
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=4, columnspan=3)
@@ -502,23 +502,23 @@ class GCodeGUI:
         
         # Botones directivos
         tk.Button(jog_frame, text="Y+", command=lambda: self.jog_step('y', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=0, column=1, padx=3, pady=2)
         
         tk.Button(jog_frame, text="X-", command=lambda: self.jog_step('x', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=1, column=0, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=1, column=0, padx=3, pady=2)
         tk.Button(jog_frame, text="X+", command=lambda: self.jog_step('x', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=1, column=2, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=1, column=2, padx=3, pady=2)
         
         tk.Button(jog_frame, text="Y-", command=lambda: self.jog_step('y', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=2, column=1, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=2, column=1, padx=3, pady=2)
         
         tk.Button(jog_frame, text="Z+", command=lambda: self.jog_step('z', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=3, column=0, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=3, column=0, padx=3, pady=2)
         tk.Button(jog_frame, text="Z-", command=lambda: self.jog_step('z', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=3, column=2, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=3, column=2, padx=3, pady=2)
         
         ttk.Button(jog_frame, text="🏠 Establecer Origen", command=self.set_origin, 
-                   width=25).grid(row=4, column=0, columnspan=3, pady=15, sticky=(tk.W, tk.E))
+                   width=25).grid(row=4, column=0, columnspan=3, pady=8, sticky=(tk.W, tk.E))
         
         # G-code list
         gcode_label = ttk.Label(left_frame, text="Lista G-code", font=("Arial", 10, "bold"))
