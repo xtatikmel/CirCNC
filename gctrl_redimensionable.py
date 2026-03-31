@@ -570,6 +570,10 @@ class GCodeGUI:
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
         
+        # Límites del área de trabajo (Fuera de los ejes o en el borde)
+        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
+        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        
         # Inicializar punto cruz
         self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
         
@@ -753,12 +757,19 @@ class GCodeGUI:
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
         
+        # Límites del área de trabajo
+        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
+        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
             self.ax.plot(self.parser.x_points, self.parser.y_points, 'b-', linewidth=2.5, label='Trayectoria')
-            self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=12, label='Inicio')
+            self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=10, label='Inicio')
             if len(self.parser.x_points) > 1:
-                self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=12, label='Final')
+                self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=10, label='Final')
+            
+            # Leyenda fuera del dibujo (arriba)
+            self.ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=9, frameon=False)
         
         # Re-crear punto de rastreo ya que ax.clear() lo destruyó
         self.machine_dot, = self.ax.plot([self.controller.position['x']], [self.controller.position['y']], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
