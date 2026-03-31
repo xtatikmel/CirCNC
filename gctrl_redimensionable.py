@@ -555,12 +555,12 @@ class GCodeGUI:
         
         # PANEL CENTRAL: VISUALIZACIÓN
         center_frame = ttk.Frame(paned)
-        paned.add(center_frame, weight=2)
+        paned.add(center_frame, weight=3) # Un poco más de peso pero con figura inicial menor
         
         viz_label = ttk.Label(center_frame, text="Visualización de Trayectoria", font=("Arial", 10, "bold"))
         viz_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        self.fig = Figure(figsize=(8, 8), dpi=100)
+        self.fig = Figure(figsize=(5, 5), dpi=100) # Tamaño inicial reducido para dar espacio
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel('X (mm)', fontsize=10)
         self.ax.set_ylabel('Y (mm)', fontsize=10)
@@ -569,11 +569,6 @@ class GCodeGUI:
         self.ax.set_xlim(-5, 95)
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
-        
-        # Límites
-        rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
-        self.ax.add_patch(rect)
-        self.ax.text(45, -3, 'Límites: 90×90mm', ha='center', fontsize=9, color='red')
         
         # Inicializar punto cruz
         self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
@@ -624,7 +619,8 @@ class GCodeGUI:
         progress_frame = ttk.LabelFrame(right_frame, text="Progreso", padding="5")
         progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        self.time_label = ttk.Label(progress_frame, text="⏱️ Estimado F1000: --m --s | F2000: --m --s", font=("Arial", 10, "bold"), foreground="green")
+        self.time_label = ttk.Label(progress_frame, text="⏱️ Tiempo Estimado:\nF1000: --m --s  |  F2000: --m --s", 
+                                   font=("Arial", 9, "bold"), foreground="green", justify=tk.CENTER)
         self.time_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
         
         self.progress_var = tk.IntVar()
@@ -635,7 +631,7 @@ class GCodeGUI:
         status_inner.grid(row=2, column=0, sticky=(tk.W, tk.E))
         self.progress_label = ttk.Label(status_inner, text="0 / 0 líneas (0%)", font=("Arial", 9, "bold"))
         self.progress_label.pack(side=tk.LEFT)
-        self.elapsed_time_label = ttk.Label(status_inner, text="⏳ Transcurrido: 00:00", font=("Arial", 9, "bold"), foreground="blue")
+        self.elapsed_time_label = ttk.Label(status_inner, text="⏳: 00:00", font=("Arial", 9, "bold"), foreground="blue")
         self.elapsed_time_label.pack(side=tk.RIGHT)
         
         # === FILA 2: LOG Y TERMINAL MANUAL ===
@@ -697,7 +693,7 @@ class GCodeGUI:
         mins_2000 = int(total_sec_2000 // 60)
         secs_2000 = int(total_sec_2000 % 60)
         
-        self.time_label.configure(text=f"⏱️ Estimado F1000: {mins_1000}m {secs_1000}s | F2000: {mins_2000}m {secs_2000}s")
+        self.time_label.configure(text=f"⏱️ Tiempo Estimado:\nF1000: {mins_1000}m {secs_1000}s  |  F2000: {mins_2000}m {secs_2000}s")
     
     def set_speed(self, speed_type):
         self.controller.set_speed(speed_type)
@@ -757,18 +753,12 @@ class GCodeGUI:
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
         
-        # Límites
-        rect = patches.Rectangle((0, 0), 90, 90, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
-        self.ax.add_patch(rect)
-        self.ax.text(45, -3, 'Límites: 90×90mm', ha='center', fontsize=9, color='red')
-        
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
             self.ax.plot(self.parser.x_points, self.parser.y_points, 'b-', linewidth=2.5, label='Trayectoria')
             self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=12, label='Inicio')
             if len(self.parser.x_points) > 1:
                 self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=12, label='Final')
-            self.ax.legend(loc='upper right', fontsize=10)
         
         # Re-crear punto de rastreo ya que ax.clear() lo destruyó
         self.machine_dot, = self.ax.plot([self.controller.position['x']], [self.controller.position['y']], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
