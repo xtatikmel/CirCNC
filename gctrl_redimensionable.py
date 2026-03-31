@@ -125,10 +125,14 @@ class GCodeController:
         
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
+        self.completion_callback = None
         self.serial_lock = threading.Lock()
     
     def set_log_callback(self, callback):
         self.log_callback = callback
+
+    def set_completion_callback(self, callback):
+        self.completion_callback = callback
     
     def log(self, message):
         if self.log_callback:
@@ -404,6 +408,9 @@ class GCodeController:
             if self.streaming:
                 self.log("✅ G-code completado")
                 self.return_to_origin()
+                self.streaming = False
+                if self.completion_callback:
+                    self.completion_callback()
         
         threading.Thread(target=_stream, daemon=True).start()
     
@@ -450,6 +457,7 @@ class GCodeGUI:
         
         self.controller = GCodeController()
         self.controller.set_log_callback(self.log)
+        self.controller.set_completion_callback(self.on_job_completed)
         self.parser = GCodeParser()
         
         self.create_widgets()
@@ -843,6 +851,18 @@ class GCodeGUI:
         self.pause_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.DISABLED)
     
+    def on_job_completed(self):
+        # Se llama desde el hilo de streaming, lo pasamos al hilo principal
+        self.root.after(0, self._show_completion_alert)
+
+    def _show_completion_alert(self):
+        self.start_btn.configure(state=tk.NORMAL)
+        self.pause_btn.configure(state=tk.DISABLED)
+        self.stop_btn.configure(state=tk.DISABLED)
+        mins = self.job_seconds // 60
+        secs = self.job_seconds % 60
+        messagebox.showinfo("Trabajo Completado", f"¡El archivo G-code ha terminado de ejecutarse!\nTiempo total: {mins:02d}:{secs:02d}")
+        
     def log(self, message):
         self.log_area.insert(tk.END, message + "\n")
         self.log_area.see(tk.END)
