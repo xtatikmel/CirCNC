@@ -1,5 +1,7 @@
 # CirCNC
 
+![Banner](images/banner.png)
+
 ```
   _____ _                _   _  _____ 
  / ____(_)              | \ | |/ ____|
@@ -68,9 +70,9 @@ python gctrl.py
 
 ## Capturas de Pantalla
 
-![Interfaz Principal](Capturas/GUI.png)
+![Interfaz Principal](images/GUI.png)
 
-![Trabajo Completado](Capturas/complete.png)
+![Trabajo Completado](images/complete.png)
 
 ## Pruebas
 
