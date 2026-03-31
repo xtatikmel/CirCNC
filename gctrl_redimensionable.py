@@ -292,6 +292,7 @@ class GCodeController:
         
         axis = axis.upper()
         speed_mm = self.SPEEDS.get(speed_type, 1.0)
+        feedrate = self.FEEDRATES.get(speed_type, 1000)  # Feedrate dinámico
         
         # Calcular nueva posición / Control de Servo Z
         if axis == 'Z':
@@ -322,9 +323,20 @@ class GCodeController:
         #     self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
         #     return False
         
-        # Enviar comando G-code
+        # Enviar comando G-code con feedrate dinámico
         sign = "+" if direction == "+" else ""
         distance = speed_mm if direction == "+" else -speed_mm
+        
+        # Calcular delay basado en velocidad (menor delay = más rápido)
+        # Esto complementa la velocidad del motor en Arduino
+        delay_mapping = {
+            'muy_lento': 0.5,
+            'lento': 0.3,
+            'normal': 0.1,
+            'rapido': 0.05,
+            'muy_rapido': 0.02
+        }
+        step_delay = delay_mapping.get(speed_type, 0.1)
         
         commands = [
             "G91",  # Modo relativo
@@ -332,11 +344,10 @@ class GCodeController:
             "G90"   # Volver a absoluto
         ]
         
-        self.log(f"🔍 DEBUG: speed_type={speed_type}, speed_mm={speed_mm}, axis={axis}, direction={direction}, distance={distance}")
+        self.log(f"🔍 DEBUG: speed_type={speed_type}, speed_mm={speed_mm}, step_delay={step_delay}s")
         for cmd in commands:
-            self.log(f"🔍 DEBUG: Enviando comando: [{cmd}]")
             self.send_command(cmd)
-            time.sleep(0.1)
+            time.sleep(step_delay)  # Delay variable según velocidad
         
         # Solicitar estado
         time.sleep(0.3)
