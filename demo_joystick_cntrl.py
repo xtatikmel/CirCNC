@@ -1,6 +1,7 @@
 """
-DEMO INTERACTIVO - JOYSTICK CONTROL CNC
-========================================
+CIRCE CNC - DEMO INTERACTIVO - JOYSTICK
+=======================================
+Versión: Transformación y Control.
 ✅ Control en tiempo real con joystick/teclado
 ✅ 2 Motores paso a paso (Eje X e Y)
 ✅ 1 Servo motor SG90 (Eje Z)
@@ -44,21 +45,17 @@ class MotorController:
         self.running = True
         
         # Posición actual
-        self.position = {
-            'x': 0.0,      # mm
-            'y': 0.0,      # mm
-            'z': 90,       # grados servo (0-180)
-            'x_steps': 0,  # pasos totales
-            'y_steps': 0
-        }
+        self.position = {'x': 0.0, 'y': 0.0, 'z': 50}
+        self.mpos = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.offset = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         
-        # Velocidades
+        # Velocidades (mm por evento de joystick)
         self.speed_modes = {
-            'muy_lento': 50,    # ms entre pasos
-            'lento': 30,
-            'normal': 15,
-            'rapido': 8,
-            'muy_rapido': 3
+            'muy_lento': 0.1,    
+            'lento': 0.5,
+            'normal': 1.0,
+            'rapido': 2.0,
+            'muy_rapido': 5.0
         }
         self.current_speed = 'normal'
         self.step_delay = self.speed_modes[self.current_speed]
@@ -66,16 +63,16 @@ class MotorController:
         # Estado de movimiento
         self.moving_x = False
         self.moving_y = False
-        self.x_direction = 0   # -1, 0, 1
+        self.x_direction = 0   
         self.y_direction = 0
-        self.z_direction = 0   # -1, 0, 1 (para servo)
+        self.z_direction = 0   
         
-        # Límites calibrados
+        # Límites visuales sueltos
         self.limits = {
-            'x_min': 0,
-            'x_max': EFFECTIVE_STROKE_MM,
-            'y_min': 0,
-            'y_max': EFFECTIVE_STROKE_MM,
+            'x_min': -100,
+            'x_max': 200,
+            'y_min': -100,
+            'y_max': 200,
             'z_min': 0,
             'z_max': 180
         }
@@ -126,8 +123,8 @@ class MotorController:
             self.port.reset_input_buffer()
             self.port.reset_output_buffer()
             
-            # Enviar comando de prueba
-            self.send_command("INIT")
+            # Enviar comando de prueba (estado de GRBL)
+            self.send_command("?")
             time.sleep(0.2)
             
             self.connected = True
@@ -144,13 +141,38 @@ class MotorController:
             return False
     
     def _read_responses(self):
-        """Lee respuestas del Arduino"""
+        """Lee respuestas del Arduino y calcula WPos"""
         while self.running and self.connected and self.port:
             try:
                 if self.port.in_waiting > 0:
                     response = self.port.readline().decode().strip()
                     if response:
-                        self.log(f"← {response}")
+                        if response.startswith("<"):
+                            try:
+                                if "WPos:" in response:
+                                    pos_str = response.split("WPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.position = {'x': x, 'y': y, 'z': self.position['z']}
+                                elif "MPos:" in response:
+                                    pos_str = response.split("MPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.mpos = {'x': x, 'y': y, 'z': z}
+                                    if "WCO:" in response:
+                                        wco_str = response.split("WCO:")[1].split("|")[0].split(">")[0]
+                                        ox, oy, oz = map(float, wco_str.split(","))
+                                        self.position = {'x': x - ox, 'y': y - oy, 'z': self.position['z']}
+                                    else:
+                                        self.position = {
+                                            'x': x - self.offset.get('x', 0.0),
+                                            'y': y - self.offset.get('y', 0.0),
+                                            'z': self.position['z']
+                                        }
+                                self._update_position()
+                            except:
+                                pass
+                        else:
+                            if response != "ok":
+                                self.log(f"← {response}")
                 time.sleep(0.01)
             except:
                 pass
@@ -165,121 +187,67 @@ class MotorController:
                 command += '\n'
             
             self.port.write(command.encode())
-            self.log(f"→ {command.strip()}")
+            if command.strip() != "?":
+                self.log(f"→ {command.strip()}")
             return True
         except Exception as e:
             self.log(f"❌ Error: {e}")
             return False
     
     def move_x(self, steps, direction):
-        """Mueve motor X (direction: 1=+, -1=-)"""
-        if not self.connected:
-            self.log("❌ No conectado")
-            return False
+        if not self.connected: return False
         
-        new_x = self.position['x'] + (steps * DISTANCE_PER_MICROSTEP * direction)
+        dist = abs(steps) * self.step_delay
+        sign = "" if direction > 0 else "-"
         
-        if new_x < self.limits['x_min'] or new_x > self.limits['x_max']:
-            self.log(f"⚠️ Límite X alcanzado: {new_x:.2f}mm")
-            return False
-        
-        # Comando para Arduino (L293D)
-        # X-Forward: IN1=HIGH, IN2=LOW, EN=PWM_SPEED
-        # X-Reverse: IN1=LOW, IN2=HIGH, EN=PWM_SPEED
-        
-        if direction > 0:
-            cmd = f"MOVE_X_FWD,{steps},{self.step_delay}"
-        else:
-            cmd = f"MOVE_X_REV,{steps},{self.step_delay}"
-        
-        self.send_command(cmd)
-        
-        self.position['x'] = new_x
-        self.position['x_steps'] += steps * direction
-        
-        self._update_position()
+        self.send_command("G91")
+        self.send_command(f"G1 X{sign}{dist:.2f} F1500")
+        self.send_command("G90")
+        self.send_command("?")
         return True
     
     def move_y(self, steps, direction):
-        """Mueve motor Y (direction: 1=+, -1=-)"""
-        if not self.connected:
-            self.log("❌ No conectado")
-            return False
+        if not self.connected: return False
         
-        new_y = self.position['y'] + (steps * DISTANCE_PER_MICROSTEP * direction)
+        dist = abs(steps) * self.step_delay
+        sign = "" if direction > 0 else "-"
         
-        if new_y < self.limits['y_min'] or new_y > self.limits['y_max']:
-            self.log(f"⚠️ Límite Y alcanzado: {new_y:.2f}mm")
-            return False
-        
-        if direction > 0:
-            cmd = f"MOVE_Y_FWD,{steps},{self.step_delay}"
-        else:
-            cmd = f"MOVE_Y_REV,{steps},{self.step_delay}"
-        
-        self.send_command(cmd)
-        
-        self.position['y'] = new_y
-        self.position['y_steps'] += steps * direction
-        
-        self._update_position()
+        self.send_command("G91")
+        self.send_command(f"G1 Y{sign}{dist:.2f} F1500")
+        self.send_command("G90")
+        self.send_command("?")
         return True
     
     def move_z(self, angle_change):
-        """Mueve servo Z (angle_change en grados)"""
-        if not self.connected:
-            self.log("❌ No conectado")
-            return False
+        if not self.connected: return False
         
-        new_z = self.position['z'] + angle_change
-        
-        if new_z < self.limits['z_min'] or new_z > self.limits['z_max']:
-            self.log(f"⚠️ Límite Z alcanzado: {new_z:.0f}°")
-            return False
-        
-        # Servo SG90 con PWM (1000µs=0°, 1500µs=90°, 2000µs=180°)
-        # Convertir ángulo a microsegundos
-        pwm_us = 1000 + (new_z * 1000 / 180)
-        
-        cmd = f"MOVE_Z,{int(new_z)}"
-        
-        self.send_command(cmd)
+        new_z = self.position['z'] + (angle_change * 5)  # 5 grados por tick
+        new_z = max(0, min(180, new_z))
         
         self.position['z'] = new_z
-        
+        self.send_command(f"M300 S{int(new_z)}")
         self._update_position()
         return True
     
     def set_speed(self, speed_mode):
-        """Cambia velocidad de movimiento"""
         if speed_mode in self.speed_modes:
             self.current_speed = speed_mode
             self.step_delay = self.speed_modes[speed_mode]
-            speed_mm_s = 1000 / self.step_delay * DISTANCE_PER_MICROSTEP
-            self.log(f"⚙️ Velocidad: {speed_mode.upper()} ({speed_mm_s:.2f}mm/s, delay={self.step_delay}ms)")
+            self.log(f"⚙️ Velocidad (Resolución): {speed_mode.upper()} ({self.step_delay} mm/movimiento)")
             return True
         return False
     
     def return_to_origin(self):
-        """Retorna a origen (0,0,90°)"""
-        if not self.connected:
-            return False
+        """Establece origen como en gctrl"""
+        if not self.connected: return False
+        self.log("📍 Estableciendo Origen en Posición Actual (G92)...")
         
-        self.log("📍 Retornando a origen...")
+        self.send_command("G92 X0 Y0 Z0")
+        time.sleep(0.3)
+        self.offset = self.mpos.copy()
         
-        cmd = "RETURN_HOME"
-        self.send_command(cmd)
-        
-        self.position = {
-            'x': 0.0,
-            'y': 0.0,
-            'z': 90,
-            'x_steps': 0,
-            'y_steps': 0
-        }
-        
-        self._update_position()
-        self.log("✅ En origen (0,0,90°)")
+        self.send_command("?")
+        self.log("✅ Origen Cero establecido y coordenadas limpias")
         return True
     
     def calibrate_x_min(self):
@@ -333,7 +301,7 @@ class JoystickGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("🎮 CNC DEMO - Control Interactivo con Joystick")
+        self.root.title("🎮 CIRCE CNC - Control con Joystick Virtual")
         self.root.geometry("1200x900")
         self.root.configure(bg="#1e1e1e")
         
@@ -351,8 +319,17 @@ class JoystickGUI:
         self.root.bind('<Key>', self.on_key_press)
         self.root.bind('<KeyRelease>', self.on_key_release)
         
-        # Actualizar movimiento continuo
         self.continuous_move()
+        
+        # Mensaje de bienvenida con Arte ASCII
+        self.log("  _____ _                _   _  _____ ")
+        self.log(" / ____(_)              | \ | |/ ____|")
+        self.log("| |     _ _ __ ___ ___  |  \| | |     ")
+        self.log("| |    | | '__/ __/ _ \ | . ` | |     ")
+        self.log("| |____| | | | (_|  __/ | |\  | |____ ")
+        self.log(" \\_____|_|_|  \\___\\___| |_| \\_|\\_____|")
+        self.log("-" * 40)
+        self.log("🪄 Circe CNC: El poder de la transformación.")
     
     def create_widgets(self):
         """Crea la interfaz gráfica"""
@@ -432,7 +409,6 @@ CONTROL:
         ttk.Label(x_inner, text="X:", font=("Arial", 14, "bold")).pack(side=tk.LEFT, padx=10)
         self.x_label = ttk.Label(x_inner, text="0.000 mm", font=("Arial", 16, "bold"), foreground="cyan")
         self.x_label.pack(side=tk.LEFT, padx=10)
-        ttk.Label(x_inner, text="(Pasos: 0)", font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
         
         # Y Position
         y_inner = ttk.Frame(pos_frame)
@@ -440,7 +416,6 @@ CONTROL:
         ttk.Label(y_inner, text="Y:", font=("Arial", 14, "bold")).pack(side=tk.LEFT, padx=10)
         self.y_label = ttk.Label(y_inner, text="0.000 mm", font=("Arial", 16, "bold"), foreground="lime")
         self.y_label.pack(side=tk.LEFT, padx=10)
-        ttk.Label(y_inner, text="(Pasos: 0)", font=("Arial", 10)).pack(side=tk.LEFT, padx=10)
         
         # Z Position
         z_inner = ttk.Frame(pos_frame)
@@ -616,8 +591,8 @@ CONTROL:
                 self.controller.move_y(1, self.moving['y'])
             if self.moving['z'] != 0:
                 self.controller.move_z(self.moving['z'])
-        
-        self.root.after(50, self.continuous_move)
+        # Mantenemos a 200 milisegundos para no ahogar el puerto serial con comandos G-Code
+        self.root.after(200, self.continuous_move)
     
     def update_position(self, pos):
         """Actualiza display de posición"""
@@ -631,11 +606,9 @@ CONTROL:
         self.y_limit_label.configure(text=f"{limits['y_min']:.2f} → {limits['y_max']:.2f}")
     
     def update_speed_label(self):
-        """Actualiza label de velocidad"""
         speed = self.controller.current_speed
-        delay = self.controller.step_delay
-        speed_mm_s = 1000 / delay * DISTANCE_PER_MICROSTEP
-        self.speed_label.configure(text=f"{speed.upper()} ({delay}ms, {speed_mm_s:.2f}mm/s)")
+        dist = self.controller.step_delay
+        self.speed_label.configure(text=f"{speed.upper()} ({dist:.1f} mm/pulso)")
     
     def log(self, message):
         """Agrega mensaje al log"""

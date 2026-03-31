@@ -1,18 +1,30 @@
-# Controlador G-code
+# Circe CNC
+
+```
+  _____ _                _   _  _____ 
+ / ____(_)              | \ | |/ ____|
+| |     _ _ __ ___ ___  |  \| | |     
+| |    | | '__/ __/ _ \ | . ` | |     
+| |____| | | | (_|  __/ | |\  | |____ 
+ \_____|_|_|  \___\___| |_| \_|\_____|
+```
 
 ## Descripción
-Controlador G-code es una aplicación desarrollada por 'Paradoja Developers' que permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
+**Circe CNC** es una aplicación avanzada inspirada en la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que Circe transformaba la realidad con precisión, esta herramienta permite transformar diseños complejos en movimientos mecánicos exactos.
+
+Desarrollada por 'Paradoja Developers', permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
 
 ## Características Principales
+- Interfaz gráfica completamente redimensionable y modular
 - Conexión serial con la máquina CNC
-- Carga y ejecución de archivos G-code
-- Control manual de ejes (X, Y, Z)
-- Monitoreo en tiempo real de la posición
-- Control de velocidad ajustable
-- Parada de emergencia
-- Visualización de comunicación serial
-- Prueba de límites de la máquina
-- Establecimiento de origen
+- Carga e interpretación de archivos G-code
+- Visualización de trayectoria G-code en tiempo real
+- Control manual de ejes (X, Y) y Servo (Z)
+- Monitoreo en tiempo real de la posición y progreso
+- Cálculo de tiempo estimado y alerta de trabajo completado
+- Función para centrar automáticamente el diseño en el origen (0,0)
+- Control de velocidad en 5 niveles para movimientos manuales
+- Terminal Serial manual para enviar comandos interactivos
 
 ## Requisitos del Sistema
 - Python 3.x
@@ -56,9 +68,9 @@ python gctrl.py
 
 ## Capturas de Pantalla
 
-![Interfaz Principal](images/running.png)
+![Interfaz Principal](Capturas/GUI.png)
 
-![Interfaz Complete](images/complete.png)
+![Trabajo Completado](Capturas/complete.png)
 
 ## Pruebas
 

@@ -1,8 +1,8 @@
-# Verificación de Conexiones y Orígenes - CNC-GCTRL-L293
+# Verificación de Conexiones y Orígenes - Circe CNC
 
 ## Resumen Ejecutivo
 
-Este documento detalla la verificación completa de las conexiones del puerto Arduino, los orígenes de los motores y las pruebas de integración del sistema CNC-GCTRL-L293.
+Este documento detalla la verificación completa de las conexiones del puerto Arduino, los orígenes de los motores y las pruebas de integración del sistema Circe CNC.
 
 ## Fecha de Verificación
 - **Fecha**: 2025-10-26
@@ -260,7 +260,7 @@ Este documento detalla la verificación completa de las conexiones del puerto Ar
 
 **Estado Final**: ✅ APROBADO PARA PRODUCCIÓN
 
-Todas las verificaciones han sido completadas exitosamente. El sistema CNC-GCTRL-L293 está completamente verificado y listo para operación.
+Todas las verificaciones han sido completadas exitosamente. El sistema Circe CNC está completamente verificado y listo para operación.
 
 ---
-*Documento generado automáticamente el 2025-10-26*
+*Documento actualizado para la versión Circe CNC el 2026-03-31*

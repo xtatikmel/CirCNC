@@ -1,6 +1,8 @@
 """
-CNC PLOTTER CONTROLLER - VERSIÓN CON PANELES REDIMENSIONABLES
-==============================================================
+CIRCE CNC - CONTROLADOR DE PLOTTER
+==================================
+Versión inspirada en la mitología griega: Transformación y Control.
+
 ✅ Control manual paso a paso FUNCIONAL
 ✅ Gráfica completamente visible y redimensionable
 ✅ Paneles con separadores para cambiar tamaño
@@ -20,6 +22,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.patches as patches
 import re
+import math
+import os
+from PIL import Image, ImageTk
 
 # ===== PARSER DE G-CODE =====
 class GCodeParser:
@@ -32,6 +37,7 @@ class GCodeParser:
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.total_distance = 0.0
     
     def parse(self, filename):
         """Parsea archivo G-code"""
@@ -41,6 +47,7 @@ class GCodeParser:
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.total_distance = 0.0
         
         try:
             with open(filename, 'r') as f:
@@ -79,6 +86,9 @@ class GCodeParser:
                 y_val = float(y_match.group(1))
                 new_y = y_val if self.mode_absolute else self.current_y + y_val
             
+            dist = math.sqrt((new_x - self.current_x)**2 + (new_y - self.current_y)**2)
+            self.total_distance += dist
+            
             self.current_x = new_x
             self.current_y = new_y
             self.x_points.append(new_x)
@@ -97,26 +107,36 @@ class GCodeController:
         self.gcode_index = 0
         
         self.position = {'x': 0.0, 'y': 0.0, 'z': 1.0}
+        self.mpos = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.offset = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.servo_angle = 50  # Ángulo inicial asumido (arriba)
+        
         
         self.machine_limits = {
-            'x': {'min': 0, 'max': 40},
-            'y': {'min': 0, 'max': 40},
-            'z': {'min': 0, 'max': 1}
+            'x': {'min': -100, 'max': 100},
+            'y': {'min': -100, 'max': 100},
+            'z': {'min': -5, 'max': 5}
         }
         
         self.SPEEDS = {
+            'muy_lento': 0.1,
             'lento': 0.5,
             'normal': 1.0,
-            'rapido': 2.0
+            'rapido': 2.0,
+            'muy_rapido': 5.0
         }
         self.current_speed = 'normal'
         
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
+        self.completion_callback = None
         self.serial_lock = threading.Lock()
     
     def set_log_callback(self, callback):
         self.log_callback = callback
+
+    def set_completion_callback(self, callback):
+        self.completion_callback = callback
     
     def log(self, message):
         if self.log_callback:
@@ -191,15 +211,31 @@ class GCodeController:
                     response = self.port.readline().decode().strip()
                     
                     if response:
-                        self.log(f"← {response}")
-                        
                         if response.startswith("<"):
                             try:
-                                pos_str = response.split("MPos:")[1].split("|")[0]
-                                x, y, z = map(float, pos_str.split(","))
-                                self.position = {'x': x, 'y': y, 'z': z}
+                                if "WPos:" in response:
+                                    pos_str = response.split("WPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.position = {'x': x, 'y': y, 'z': z}
+                                elif "MPos:" in response:
+                                    pos_str = response.split("MPos:")[1].split("|")[0].split(">")[0]
+                                    x, y, z = map(float, pos_str.split(","))
+                                    self.mpos = {'x': x, 'y': y, 'z': z}
+                                    
+                                    if "WCO:" in response:
+                                        wco_str = response.split("WCO:")[1].split("|")[0].split(">")[0]
+                                        ox, oy, oz = map(float, wco_str.split(","))
+                                        self.position = {'x': x - ox, 'y': y - oy, 'z': z - oz}
+                                    else:
+                                        self.position = {
+                                            'x': x - self.offset.get('x', 0.0),
+                                            'y': y - self.offset.get('y', 0.0),
+                                            'z': z - self.offset.get('z', 0.0)
+                                        }
                             except:
                                 pass
+                        else:
+                            self.log(f"← {response}")
                 
                 time.sleep(0.01)
             except Exception as e:
@@ -216,7 +252,8 @@ class GCodeController:
                     command = command + '\n'
                 
                 self.port.write(command.encode())
-                self.log(f"→ {command.strip()}")
+                if command.strip() != "?":
+                    self.log(f"→ {command.strip()}")
                 return True
         except Exception as e:
             self.log(f"❌ Error: {str(e)}")
@@ -243,21 +280,34 @@ class GCodeController:
         axis = axis.upper()
         speed_mm = self.SPEEDS.get(speed_type, 1.0)
         
-        # Calcular nueva posición
+        # Calcular nueva posición / Control de Servo Z
+        if axis == 'Z':
+            step_deg = int(speed_mm * 10) # 0.5 -> 5°, 1.0 -> 10°, 2.0 -> 20°
+            if direction == '+':
+                self.servo_angle += step_deg
+            else:
+                self.servo_angle -= step_deg
+                
+            self.servo_angle = max(0, min(180, self.servo_angle)) # Límite físico del servo
+            
+            self.send_command(f"M300 S{self.servo_angle}")
+            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Velocidad {speed_type}")
+            return True
+        
         new_pos = self.position.copy()
         if direction == '+':
             new_pos[axis.lower()] += speed_mm
         else:
             new_pos[axis.lower()] -= speed_mm
         
-        # Verificar límites
-        if not self.check_limits(
-            x=new_pos['x'] if axis == 'X' else None,
-            y=new_pos['y'] if axis == 'Y' else None,
-            z=new_pos['z'] if axis == 'Z' else None
-        ):
-            self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
-            return False
+        # Verificar límites (Comentado para permitir control libre al buscar el origen)
+        # if not self.check_limits(
+        #     x=new_pos['x'] if axis == 'X' else None,
+        #     y=new_pos['y'] if axis == 'Y' else None,
+        #     z=new_pos['z'] if axis == 'Z' else None
+        # ):
+        #     self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
+        #     return False
         
         # Enviar comando G-code
         sign = "+" if direction == "+" else ""
@@ -291,18 +341,17 @@ class GCodeController:
         if not self.port or not self.port.is_open:
             return False
         
-        self.log("📌 Estableciendo origen...")
+        self.log("📌 Estableciendo origen (G92)...")
         commands = [
-            "G90",
-            "G1 X0 Y0",
-            "G1 Z1"
+            "G92 X0 Y0 Z0"  # Establece las coordenadas actuales como 0,0,0
         ]
         
         for cmd in commands:
             self.send_command(cmd)
             time.sleep(0.3)
-        
-        self.position = {'x': 0.0, 'y': 0.0, 'z': 1.0}
+            
+        self.offset = self.mpos.copy()
+        self.position = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         time.sleep(0.2)
         self.send_command("?")
         self.log("✅ Origen establecido")
@@ -344,13 +393,28 @@ class GCodeController:
                     continue
                 
                 line = self.gcode[self.gcode_index]
+                
+                # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
+                if "M300" in line.upper():
+                    match = re.search(r'S(\d+)', line.upper())
+                    if match:
+                        self.servo_angle = int(match.group(1))
+                        
                 self.send_command(line)
                 self.gcode_index += 1
+                
+                # Pedir actualización de posición (estado) cada 2 líneas para la UI
+                if self.gcode_index % 2 == 0:
+                    self.send_command("?")
+                    
                 time.sleep(0.3)
             
             if self.streaming:
+                self.streaming = False
                 self.log("✅ G-code completado")
                 self.return_to_origin()
+                if self.completion_callback:
+                    self.completion_callback()
         
         threading.Thread(target=_stream, daemon=True).start()
     
@@ -392,18 +456,42 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("CNC Plotter - Control Avanzado con Paneles Redimensionables")
+        self.root.title("Circe CNC - Control Avanzado - Paradoja Devs")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
         self.controller.set_log_callback(self.log)
+        self.controller.set_completion_callback(self.on_job_completed)
         self.parser = GCodeParser()
         
+        # Configurar icono de la aplicación
+        try:
+            icon_path = os.path.join("images", "Logo.png")
+            if os.path.exists(icon_path):
+                self.icon_img = ImageTk.PhotoImage(Image.open(icon_path))
+                self.root.iconphoto(False, self.icon_img)
+        except Exception as e:
+            print(f"Error cargando icono: {e}")
+            
         self.create_widgets()
         self.update_ports()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.update_position()
         self.update_progress()
+        
+        # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
+        self.log(r"  _____ _                _   _  _____ ")
+        self.log(r" / ____(_)              | \ | |/ ____|")
+        self.log(r"| |     _ _ __ ___ ___  |  \| | |     ")
+        self.log(r"| |    | | '__/ __/ _ \ | . ` | |     ")
+        self.log(r"| |____| | | | (_|  __/ | |\  | |____ ")
+        self.log(r" \_____|_|_|  \___\___| |_| \_|\_____|")
+        self.log("-" * 40)
+        self.log("🪄 CirCNC: Transformación y Control Iniciados")
+        
+        # Estado del cronómetro
+        self.job_seconds = 0
+        self.update_timer()
     
     def create_widgets(self):
         """Crea interfaz con paneles redimensionables"""
@@ -427,16 +515,34 @@ class GCodeGUI:
         speed_frame = ttk.LabelFrame(control_frame, text="Velocidad", padding="5")
         speed_frame.grid(row=0, column=4, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
+        ttk.Button(speed_frame, text="🐌 M.LENTO", 
+                   command=lambda: self.set_speed('muy_lento'), width=12).grid(row=0, column=0, padx=2)
         ttk.Button(speed_frame, text="🐢 LENTO", 
-                   command=lambda: self.set_speed('lento'), width=10).grid(row=0, column=0, padx=2)
-        ttk.Button(speed_frame, text="🚗 NORMAL", 
-                   command=lambda: self.set_speed('normal'), width=10).grid(row=0, column=1, padx=2)
-        ttk.Button(speed_frame, text="🚀 RÁPIDO", 
-                   command=lambda: self.set_speed('rapido'), width=10).grid(row=0, column=2, padx=2)
+                   command=lambda: self.set_speed('lento'), width=12).grid(row=0, column=1, padx=2)
+        ttk.Button(speed_frame, text="🚶 NORMAL", 
+                   command=lambda: self.set_speed('normal'), width=12).grid(row=0, column=2, padx=2)
+        ttk.Button(speed_frame, text="🚗 RÁPIDO", 
+                   command=lambda: self.set_speed('rapido'), width=12).grid(row=0, column=3, padx=2)
+        ttk.Button(speed_frame, text="🚀 M.RÁPIDO", 
+                   command=lambda: self.set_speed('muy_rapido'), width=12).grid(row=0, column=4, padx=2)
         
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=4, columnspan=3)
         
+        # === ISOLOGOTIPO (Top Right) ===
+        try:
+            logo_path = os.path.join("images", "isologotipo.png")
+            if os.path.exists(logo_path):
+                logo_img = Image.open(logo_path)
+                # Redimensionar manteniendo proporción (altura de 60px para el header)
+                aspect_ratio = logo_img.width / logo_img.height
+                logo_img = logo_img.resize((int(60 * aspect_ratio), 60), Image.Resampling.LANCZOS)
+                self.logo_photo = ImageTk.PhotoImage(logo_img)
+                self.logo_label = ttk.Label(control_frame, image=self.logo_photo)
+                self.logo_label.grid(row=0, column=7, rowspan=2, padx=20, sticky=tk.E)
+        except Exception as e:
+            print(f"Error cargando logotipo: {e}")
+            
         # === FILA 1: PANELES PRINCIPALES CON PANED WINDOW ===
         paned = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
         paned.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
@@ -451,23 +557,23 @@ class GCodeGUI:
         
         # Botones directivos
         tk.Button(jog_frame, text="Y+", command=lambda: self.jog_step('y', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=0, column=1, padx=3, pady=2)
         
         tk.Button(jog_frame, text="X-", command=lambda: self.jog_step('x', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=1, column=0, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=1, column=0, padx=3, pady=2)
         tk.Button(jog_frame, text="X+", command=lambda: self.jog_step('x', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=1, column=2, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=1, column=2, padx=3, pady=2)
         
         tk.Button(jog_frame, text="Y-", command=lambda: self.jog_step('y', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=2, column=1, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=2, column=1, padx=3, pady=2)
         
         tk.Button(jog_frame, text="Z+", command=lambda: self.jog_step('z', '+'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=3, column=0, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=3, column=0, padx=3, pady=2)
         tk.Button(jog_frame, text="Z-", command=lambda: self.jog_step('z', '-'), 
-                  width=6, height=2, font=("Arial", 12, "bold")).grid(row=3, column=2, padx=5, pady=5)
+                  width=5, height=1, font=("Arial", 11, "bold")).grid(row=3, column=2, padx=3, pady=2)
         
         ttk.Button(jog_frame, text="🏠 Establecer Origen", command=self.set_origin, 
-                   width=25).grid(row=4, column=0, columnspan=3, pady=15, sticky=(tk.W, tk.E))
+                   width=25).grid(row=4, column=0, columnspan=3, pady=8, sticky=(tk.W, tk.E))
         
         # G-code list
         gcode_label = ttk.Label(left_frame, text="Lista G-code", font=("Arial", 10, "bold"))
@@ -480,26 +586,33 @@ class GCodeGUI:
         self.load_btn = ttk.Button(left_frame, text="📂 Cargar G-code", command=self.open_file, width=30)
         self.load_btn.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
         
+        # Botón centrar en origen
+        self.normalize_btn = ttk.Button(left_frame, text="🎯 Centrar diseño en Origen (0,0)", command=self.normalize_gcode, state=tk.DISABLED, width=30)
+        self.normalize_btn.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
+        
         # PANEL CENTRAL: VISUALIZACIÓN
         center_frame = ttk.Frame(paned)
-        paned.add(center_frame, weight=2)
+        paned.add(center_frame, weight=3) # Un poco más de peso pero con figura inicial menor
         
         viz_label = ttk.Label(center_frame, text="Visualización de Trayectoria", font=("Arial", 10, "bold"))
         viz_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        self.fig = Figure(figsize=(8, 8), dpi=100)
+        self.fig = Figure(figsize=(5, 5), dpi=100) # Tamaño inicial reducido para dar espacio
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel('X (mm)', fontsize=10)
         self.ax.set_ylabel('Y (mm)', fontsize=10)
         self.ax.set_title('Trayectoria CNC', fontsize=12)
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_xlim(-5, 45)
-        self.ax.set_ylim(-5, 45)
+        self.ax.set_xlim(-5, 95)
+        self.ax.set_ylim(-5, 95)
+        self.ax.set_aspect('equal', adjustable='box')
         
-        # Límites
-        rect = patches.Rectangle((0, 0), 40, 40, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
-        self.ax.add_patch(rect)
-        self.ax.text(20, -3, 'Límites: 40×40mm', ha='center', fontsize=9, color='red')
+        # Límites del área de trabajo (Fuera de los ejes o en el borde)
+        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
+        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        
+        # Inicializar punto cruz
+        self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=center_frame)
         self.canvas.get_tk_widget().grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -547,19 +660,37 @@ class GCodeGUI:
         progress_frame = ttk.LabelFrame(right_frame, text="Progreso", padding="5")
         progress_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
         
+        self.time_label = ttk.Label(progress_frame, text="⏱️ Tiempo Estimado:\nF1000: --m --s  |  F2000: --m --s", 
+                                   font=("Arial", 9, "bold"), foreground="green", justify=tk.CENTER)
+        self.time_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        
         self.progress_var = tk.IntVar()
         self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100, length=200)
-        self.progress_bar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
         
-        self.progress_label = ttk.Label(progress_frame, text="0 / 0 líneas (0%)", font=("Arial", 9, "bold"))
-        self.progress_label.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        status_inner = ttk.Frame(progress_frame)
+        status_inner.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        self.progress_label = ttk.Label(status_inner, text="0 / 0 líneas (0%)", font=("Arial", 9, "bold"))
+        self.progress_label.pack(side=tk.LEFT)
+        self.elapsed_time_label = ttk.Label(status_inner, text="⏳: 00:00", font=("Arial", 9, "bold"), foreground="blue")
+        self.elapsed_time_label.pack(side=tk.RIGHT)
         
-        # === FILA 2: LOG ===
+        # === FILA 2: LOG Y TERMINAL MANUAL ===
         log_frame = ttk.LabelFrame(main_frame, text="Log de Comandos", padding="5")
         log_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         self.log_area = scrolledtext.ScrolledText(log_frame, width=200, height=8, font=("Courier", 8))
         self.log_area.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Terminal Manual
+        terminal_frame = ttk.Frame(log_frame)
+        terminal_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(5,0))
+        ttk.Label(terminal_frame, text="Terminal Manual:", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
+        self.manual_cmd_var = tk.StringVar()
+        self.manual_cmd_entry = ttk.Entry(terminal_frame, textvariable=self.manual_cmd_var, width=50)
+        self.manual_cmd_entry.pack(side=tk.LEFT, padx=5)
+        self.manual_cmd_entry.bind('<Return>', lambda e: self.send_manual_command())
+        ttk.Button(terminal_frame, text="Enviar Comandos (Enter)", command=self.send_manual_command).pack(side=tk.LEFT)
         
         # Configurar pesos
         self.root.columnconfigure(0, weight=1)
@@ -572,6 +703,38 @@ class GCodeGUI:
     def jog_step(self, axis, direction):
         """Llama al controlador con velocidad actual"""
         self.controller.jog_step(axis, direction, self.controller.current_speed)
+        
+    def send_manual_command(self):
+        cmd = self.manual_cmd_var.get().strip()
+        if cmd:
+            if not self.controller.port or not self.controller.port.is_open:
+                messagebox.showwarning("Terminal", "Conecta la placa primero para enviar comandos.")
+                return
+            self.log(f"Teclado: {cmd}")
+            self.controller.send_command(cmd)
+            self.manual_cmd_var.set("")
+            
+    def update_time_estimation(self):
+        """Calcula el tiempo estimado basado en distintas velocidades (F) y retrasos del software/hardware"""
+        # +0.5s por comando de servo (constante)
+        sec_servo = sum(1 for line in self.controller.gcode if "M300" in line.upper()) * 0.5
+        
+        # En el bucle de envío (start_stream), hay un time.sleep(0.3) forzado por cada comando
+        sec_software_delay = len(self.controller.gcode) * 0.3
+        
+        # Tiempo a F1000 (1000 mm/min = 16.66 mm/seg)
+        sec_move_1000 = self.parser.total_distance / 16.66
+        total_sec_1000 = sec_move_1000 + sec_servo + sec_software_delay
+        mins_1000 = int(total_sec_1000 // 60)
+        secs_1000 = int(total_sec_1000 % 60)
+        
+        # Tiempo a F2000 (2000 mm/min = 33.33 mm/seg)
+        sec_move_2000 = self.parser.total_distance / 33.33
+        total_sec_2000 = sec_move_2000 + sec_servo + sec_software_delay
+        mins_2000 = int(total_sec_2000 // 60)
+        secs_2000 = int(total_sec_2000 % 60)
+        
+        self.time_label.configure(text=f"⏱️ Tiempo Estimado:\nF1000: {mins_1000}m {secs_1000}s  |  F2000: {mins_2000}m {secs_2000}s")
     
     def set_speed(self, speed_type):
         self.controller.set_speed(speed_type)
@@ -614,9 +777,11 @@ class GCodeGUI:
                 
                 if self.parser.parse(fn):
                     self.plot_gcode()
+                    self.update_time_estimation()
                     self.log(f"✅ Visualización actualizada: {len(self.parser.x_points)} puntos")
                 
                 self.start_btn.configure(state=tk.NORMAL)
+                self.normalize_btn.configure(state=tk.NORMAL)
     
     def plot_gcode(self):
         """Dibuja trayectoria de G-code"""
@@ -625,25 +790,81 @@ class GCodeGUI:
         self.ax.set_ylabel('Y (mm)', fontsize=10)
         self.ax.set_title('Trayectoria CNC', fontsize=12)
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_xlim(-5, 45)
-        self.ax.set_ylim(-5, 45)
+        self.ax.set_xlim(-5, 95)
+        self.ax.set_ylim(-5, 95)
+        self.ax.set_aspect('equal', adjustable='box')
         
-        # Límites
-        rect = patches.Rectangle((0, 0), 40, 40, linewidth=2, edgecolor='red', facecolor='none', linestyle='--')
-        self.ax.add_patch(rect)
-        self.ax.text(20, -3, 'Límites: 40×40mm', ha='center', fontsize=9, color='red')
+        # Límites del área de trabajo
+        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
+        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
         
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
             self.ax.plot(self.parser.x_points, self.parser.y_points, 'b-', linewidth=2.5, label='Trayectoria')
-            self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=12, label='Inicio')
+            self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=10, label='Inicio')
             if len(self.parser.x_points) > 1:
-                self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=12, label='Final')
-            self.ax.legend(loc='upper right', fontsize=10)
+                self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=10, label='Final')
+            
+            # Leyenda fuera del dibujo (arriba)
+            self.ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=9, frameon=False)
+        
+        # Re-crear punto de rastreo ya que ax.clear() lo destruyó
+        self.machine_dot, = self.ax.plot([self.controller.position['x']], [self.controller.position['y']], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
         
         self.fig.tight_layout()
         self.canvas.draw()
     
+    def normalize_gcode(self):
+        """Traslada las coordenadas de todo el Gcode para que el punto más bajo/izquierdo toque el origen (0,0)"""
+        if not self.parser.x_points or not self.controller.gcode:
+            return
+            
+        min_x = min(self.parser.x_points)
+        min_y = min(self.parser.y_points)
+        
+        # Si ya está alineado (con margen de 0.1mm), no hacemos nada
+        if abs(min_x) < 0.1 and abs(min_y) < 0.1:
+            self.log("✅ El G-code ya está alineado al origen (0,0)")
+            return
+            
+        self.log(f"🔧 Desplazando diseño... Offset aplicado: X {-min_x:.2f}mm, Y {-min_y:.2f}mm")
+        
+        # Modificar las líneas de G-code virtualmente en memoria
+        new_gcode = []
+        for line in self.controller.gcode:
+            new_line = line
+            
+            # Buscamos y reemplazamos coord X
+            x_match = re.search(r'X([-+]?\d+\.?\d*)', new_line)
+            if x_match:
+                x_val = float(x_match.group(1))
+                new_x = x_val - min_x
+                new_line = new_line[:x_match.start(1)] + f"{new_x:.3f}" + new_line[x_match.end(1):]
+                
+            # Buscamos y reemplazamos coord Y
+            y_match = re.search(r'Y([-+]?\d+\.?\d*)', new_line)
+            if y_match:
+                y_val = float(y_match.group(1))
+                new_y = y_val - min_y
+                new_line = new_line[:y_match.start(1)] + f"{new_y:.3f}" + new_line[y_match.end(1):]
+                
+            new_gcode.append(new_line)
+            
+        self.controller.gcode = new_gcode
+        
+        # Actualizar puntos matemáticos del parser instantáneamente
+        self.parser.x_points = [x - min_x for x in self.parser.x_points]
+        self.parser.y_points = [y - min_y for y in self.parser.y_points]
+        
+        # Actualizar área de texto para mostrar las nuevas coordenadas
+        self.gcode_area.delete(1.0, tk.END)
+        for i, line in enumerate(self.controller.gcode[:40], 1):
+            self.gcode_area.insert(tk.END, f"{i:3d}: {line}\n")
+            
+        # Repintar la UI
+        self.plot_gcode()
+        self.log("✅ Diseño re-centrado con éxito en (0,0)")
+
     def set_origin(self):
         self.controller.set_origin()
     
@@ -652,6 +873,10 @@ class GCodeGUI:
         self.start_btn.configure(state=tk.DISABLED)
         self.pause_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.NORMAL)
+        
+        # Reiniciar cronómetro si es inicio limpio
+        if self.controller.gcode_index == 0:
+            self.job_seconds = 0
     
     def pause_stream(self):
         self.controller.pause_streaming()
@@ -664,15 +889,43 @@ class GCodeGUI:
         self.pause_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.DISABLED)
     
+    def on_job_completed(self):
+        # Se llama desde el hilo de streaming, lo pasamos al hilo principal
+        self.root.after(0, self._show_completion_alert)
+
+    def _show_completion_alert(self):
+        self.start_btn.configure(state=tk.NORMAL)
+        self.pause_btn.configure(state=tk.DISABLED)
+        self.stop_btn.configure(state=tk.DISABLED)
+        mins = self.job_seconds // 60
+        secs = self.job_seconds % 60
+        messagebox.showinfo("Trabajo Completado", f"¡El archivo G-code ha terminado de ejecutarse!\nTiempo total: {mins:02d}:{secs:02d}")
+        
     def log(self, message):
         self.log_area.insert(tk.END, message + "\n")
         self.log_area.see(tk.END)
     
     def update_position(self):
-        self.x_label.configure(text=f"{self.controller.position['x']:.2f} mm")
-        self.y_label.configure(text=f"{self.controller.position['y']:.2f} mm")
-        self.z_label.configure(text=f"{self.controller.position['z']:.2f}")
+        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / 90.00 mm")
+        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / 90.00 mm")
+        # Mostramos el ángulo real del servo para Z
+        self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
+        
+        # Animación del punto cruz rastreador
+        if hasattr(self, 'machine_dot'):
+            self.machine_dot.set_data([self.controller.position['x']], [self.controller.position['y']])
+            if self.controller.streaming or getattr(self.controller, 'mpos', None):
+                self.canvas.draw_idle()
+                
         self.root.after(200, self.update_position)
+        
+    def update_timer(self):
+        if self.controller.streaming and not self.controller.paused:
+            self.job_seconds += 1
+            mins = self.job_seconds // 60
+            secs = self.job_seconds % 60
+            self.elapsed_time_label.configure(text=f"⏳ Transcurrido: {mins:02d}:{secs:02d}")
+        self.root.after(1000, self.update_timer)
     
     def update_progress(self):
         if self.controller.gcode:
@@ -689,7 +942,6 @@ class GCodeGUI:
         if messagebox.askokcancel("Salir", "¿Cerrar aplicación?"):
             self.controller.disconnect()
             self.root.destroy()
-
 
 def main():
     root = tk.Tk()
