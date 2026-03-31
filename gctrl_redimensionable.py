@@ -406,9 +406,9 @@ class GCodeController:
                 time.sleep(0.3)
             
             if self.streaming:
+                self.streaming = False
                 self.log("✅ G-code completado")
                 self.return_to_origin()
-                self.streaming = False
                 if self.completion_callback:
                     self.completion_callback()
         

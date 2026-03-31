@@ -57,9 +57,9 @@ python gctrl.py
 
 ## Capturas de Pantalla
 
-![Interfaz Principal Alternativa](Capturas/GUI.png)
+![Interfaz Principal](Capturas/GUI.png)
 
-![Interfaz Complete](images/complete.png)
+![Trabajo Completado](Capturas/complete.png)
 
 ## Pruebas
 
