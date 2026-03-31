@@ -125,6 +125,14 @@ class GCodeController:
             'rapido': 2.0,
             'muy_rapido': 5.0
         }
+        # Feedrates para control manual (en mm/min)
+        self.FEEDRATES = {
+            'muy_lento': 100,
+            'lento': 300,
+            'normal': 1000,
+            'rapido': 2000,
+            'muy_rapido': 3000
+        }
         self.current_speed = 'normal'
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
@@ -324,7 +332,9 @@ class GCodeController:
             "G90"   # Volver a absoluto
         ]
         
+        self.log(f"🔍 DEBUG: speed_type={speed_type}, speed_mm={speed_mm}, axis={axis}, direction={direction}, distance={distance}")
         for cmd in commands:
+            self.log(f"🔍 DEBUG: Enviando comando: [{cmd}]")
             self.send_command(cmd)
             time.sleep(0.1)
         
@@ -338,7 +348,9 @@ class GCodeController:
     def set_speed(self, speed_type):
         if speed_type in self.SPEEDS:
             self.current_speed = speed_type
-            self.log(f"⚙️  Velocidad: {speed_type.upper()} ({self.SPEEDS[speed_type]}mm)")
+            speed_mm = self.SPEEDS[speed_type]
+            self.log(f"⚙️  Velocidad: {speed_type.upper()} ({speed_mm}mm)")
+            self.log(f"🔍 DEBUG: set_speed called - speed_type={speed_type}, speed_mm={speed_mm}, current_speed={self.current_speed}")
             return True
         return False
     
@@ -468,7 +480,7 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("CirCNC - Control Avanzado - Paradoja Devs")
+        self.root.title("CirCNC - Control Avanzado - Paradoja Devs V2.0")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
@@ -500,6 +512,7 @@ class GCodeGUI:
         self.log(r" \_____|_|_|   \_____|_| \_|\_____|")
         self.log("-" * 42)
         self.log("🪄 CirCNC: El Poder de la Transformación")
+        self.log("🔄 Versión 2.0 - Actualización de Funcionalidades")
         
         # Estado del cronómetro
         self.job_seconds = 0
