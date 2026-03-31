@@ -47,9 +47,9 @@ float StepsPerMillimeterY = 39.37;
 
 // Drawing robot limits, in mm
 float Xmin = 0;
-float Xmax = 90;
+float Xmax = 80;
 float Ymin = 0;
-float Ymax = 90;
+float Ymax = 80;
 float Zmin = 0;
 float Zmax = 1;
 
