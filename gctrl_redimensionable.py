@@ -1,6 +1,8 @@
 """
-CNC PLOTTER CONTROLLER - VERSIÓN CON PANELES REDIMENSIONABLES
-==============================================================
+CIRCE CNC - CONTROLADOR DE PLOTTER
+==================================
+Versión inspirada en la mitología griega: Transformación y Control.
+
 ✅ Control manual paso a paso FUNCIONAL
 ✅ Gráfica completamente visible y redimensionable
 ✅ Paneles con separadores para cambiar tamaño
@@ -452,7 +454,7 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("CNC Plotter - Control Avanzado - Paradoja Devs")
+        self.root.title("Circe CNC - Control Avanzado - Paradoja Devs")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
@@ -465,6 +467,16 @@ class GCodeGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.update_position()
         self.update_progress()
+        
+        # Mensaje de bienvenida con Arte ASCII
+        self.log("  _____ _                _   _  _____ ")
+        self.log(" / ____(_)              | \ | |/ ____|")
+        self.log("| |     _ _ __ ___ ___  |  \| | |     ")
+        self.log("| |    | | '__/ __/ _ \ | . ` | |     ")
+        self.log("| |____| | | | (_|  __/ | |\  | |____ ")
+        self.log(" \_____|_|_|  \___\__| | \_|\_____|")
+        self.log("-" * 40)
+        self.log("🪄 Circe CNC: Transformación y Control Iniciados")
         
         # Estado del cronómetro
         self.job_seconds = 0

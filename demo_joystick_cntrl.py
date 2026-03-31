@@ -1,6 +1,7 @@
 """
-DEMO INTERACTIVO - JOYSTICK CONTROL CNC
-========================================
+CIRCE CNC - DEMO INTERACTIVO - JOYSTICK
+=======================================
+Versión: Transformación y Control.
 ✅ Control en tiempo real con joystick/teclado
 ✅ 2 Motores paso a paso (Eje X e Y)
 ✅ 1 Servo motor SG90 (Eje Z)
@@ -300,7 +301,7 @@ class JoystickGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("🎮 CNC DEMO - Control Interactivo con Joystick")
+        self.root.title("🎮 CIRCE CNC - Control con Joystick Virtual")
         self.root.geometry("1200x900")
         self.root.configure(bg="#1e1e1e")
         
@@ -318,8 +319,17 @@ class JoystickGUI:
         self.root.bind('<Key>', self.on_key_press)
         self.root.bind('<KeyRelease>', self.on_key_release)
         
-        # Actualizar movimiento continuo
         self.continuous_move()
+        
+        # Mensaje de bienvenida con Arte ASCII
+        self.log("  _____ _                _   _  _____ ")
+        self.log(" / ____(_)              | \ | |/ ____|")
+        self.log("| |     _ _ __ ___ ___  |  \| | |     ")
+        self.log("| |    | | '__/ __/ _ \ | . ` | |     ")
+        self.log("| |____| | | | (_|  __/ | |\  | |____ ")
+        self.log(" \\_____|_|_|  \\___\\___| |_| \\_|\\_____|")
+        self.log("-" * 40)
+        self.log("🪄 Circe CNC: El poder de la transformación.")
     
     def create_widgets(self):
         """Crea la interfaz gráfica"""

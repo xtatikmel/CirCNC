@@ -1,7 +1,18 @@
-# Controlador G-code
+# Circe CNC
+
+```
+  _____ _                _   _  _____ 
+ / ____(_)              | \ | |/ ____|
+| |     _ _ __ ___ ___  |  \| | |     
+| |    | | '__/ __/ _ \ | . ` | |     
+| |____| | | | (_|  __/ | |\  | |____ 
+ \_____|_|_|  \___\___| |_| \_|\_____|
+```
 
 ## Descripción
-Controlador G-code es una aplicación desarrollada por 'Paradoja Developers' que permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
+**Circe CNC** es una aplicación avanzada inspirada en la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que Circe transformaba la realidad con precisión, esta herramienta permite transformar diseños complejos en movimientos mecánicos exactos.
+
+Desarrollada por 'Paradoja Developers', permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
 
 ## Características Principales
 - Interfaz gráfica completamente redimensionable y modular

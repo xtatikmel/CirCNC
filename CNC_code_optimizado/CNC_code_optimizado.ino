@@ -1,7 +1,7 @@
 /* 
-  CNC optimizado para motores 18° (Modelo 9294) y Servo MG90.
-  Basado en CNC_code original, pero implementando Algoritmo Bresenham 
-  para evitar el efecto "escalera" en cortes y diagonales.
+  CIRCE CNC - Firmware Optimizado (Bresenham)
+  Motores: 18° (Modelo 9294) | Servo: MG90
+  Concepto: Transformación y Control.
 */
 
 #include <Servo.h>
@@ -81,7 +81,7 @@ void setup() {
   actuatorPos.z = Zmax;
 
   //  Notifications!!!
-  Serial.println("Mini CNC Plotter (Bresenham Optimized) ready!");
+  Serial.println("🪄 Circe CNC (Bresenham Optimized) ready!");
   Serial.print("X range: "); 
   Serial.print(Xmin); Serial.print(" to "); Serial.print(Xmax); Serial.println(" mm"); 
   Serial.print("Y range: "); 

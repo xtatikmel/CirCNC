@@ -1,6 +1,6 @@
-# Resumen de Cambios: CNC_code_optimizado.ino
+# Resumen de Cambios: Circe CNC - Firmware Optimizado
 
-Se ha creado un nuevo firmware (`E:\GIT\CNC-GCTRL-L293\CNC_code_optimizado\CNC_code_optimizado.ino`) partiendo de tu archivo base original, pero introduciendo los cambios necesarios matemáticos y de hardware para que funcione mejor en tu máquina equipada con el Driver L293D, Motores Nema Modelo 9294 (18°) y Servo SG90/MG90.
+Se ha creado un nuevo firmware (`E:\GIT\CNC-GCTRL-L293\CNC_code_optimizado\CNC_code_optimizado.ino`) bajo el nombre **Circe CNC**, partiendo de tu archivo base original pero introduciendo mejoras matemáticas y de hardware para el Driver L293D, Motores Nema Modelo 9294 (18°) y Servo SG90/MG90.
 
 ## ¿Qué se ha cambiado?
 

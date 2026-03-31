@@ -1,8 +1,8 @@
-# Guía de Pruebas - CNC-GCTRL-L293
+# Guía de Pruebas - Circe CNC
 
 ## Descripción General
 
-Este documento describe la infraestructura de pruebas implementada para el controlador G-code CNC-GCTRL-L293. Las pruebas están diseñadas para validar la funcionalidad del aplicativo y facilitar su montaje y optimización.
+Este documento describe la infraestructura de pruebas implementada para el controlador Circe CNC. Las pruebas están diseñadas para validar la funcionalidad del aplicativo y facilitar su montaje y optimización.
 
 ## Estructura de Pruebas
 
