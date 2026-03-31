@@ -59,6 +59,9 @@ int penDelay = 50;
 boolean absoluteMode = true;  // G90/G91 mode
 boolean isMoving = false;     // Track if motors are moving
 
+// Velocidad dinámica del motor (RPM) - cambia con comando M120
+int currentSpeed = 350;
+
 /**********************
  * void setup() - Initialisations
  ***********************/
@@ -69,11 +72,9 @@ void setup() {
   penServo.write(penZUp);
   delay(100);
 
-  // Set motor speeds - Las RPM (revoluciones por minuto)
-  // Como bajamos los stepsPerRevolution a 20, necesitamos un RPM alto para 
-  // que gire apropiadamente. 350 es un buen equilibrio para torque/velocidad media.
-  myStepperX.setSpeed(350);
-  myStepperY.setSpeed(350);  
+  // Set motor speeds - Ahora usa currentSpeed dinámico
+  myStepperX.setSpeed(currentSpeed);
+  myStepperY.setSpeed(currentSpeed);  
   
   // Initialize position
   actuatorPos.x = Xmin;
@@ -167,6 +168,27 @@ void processCommand(String command) {
         delay(penDelay);
         Serial.println("ok");
       }
+    }
+  }
+  else if (command.startsWith("M120")) {
+    // Comando para cambiar velocidad del motor (RPM)
+    // Formato: M120 S<rpm> ej: M120 S350
+    int sIndex = command.indexOf('S');
+    if (sIndex != -1) {
+      int newSpeed = command.substring(sIndex + 1).toInt();
+      // Limitar velocidad a rango válido (50-500 RPM típico)
+      if (newSpeed >= 50 && newSpeed <= 500) {
+        currentSpeed = newSpeed;
+        myStepperX.setSpeed(currentSpeed);
+        myStepperY.setSpeed(currentSpeed);
+        Serial.print("Speed set to: ");
+        Serial.println(currentSpeed);
+      } else {
+        Serial.println("error: Speed must be 50-500");
+      }
+    } else {
+      Serial.print("Current speed: ");
+      Serial.println(currentSpeed);
     }
   }
   else {

@@ -125,13 +125,14 @@ class GCodeController:
             'rapido': 2.0,
             'muy_rapido': 5.0
         }
-        # Feedrates para control manual (en mm/min)
+        # Feedrates para control manual (en RPM para Arduino)
+        # El comando M120 S<rpm> espera valores entre 50-500
         self.FEEDRATES = {
-            'muy_lento': 100,
-            'lento': 300,
-            'normal': 1000,
-            'rapido': 2000,
-            'muy_rapido': 3000
+            'muy_lento': 50,
+            'lento': 100,
+            'normal': 200,
+            'rapido': 300,
+            'muy_rapido': 400
         }
         self.current_speed = 'normal'
         self.STEPS_PER_MM = 35.56
@@ -339,15 +340,20 @@ class GCodeController:
         step_delay = delay_mapping.get(speed_type, 0.1)
         
         commands = [
+            f"M120 S{feedrate}",  # Cambiar velocidad del motor
             "G91",  # Modo relativo
-            f"G1 {axis}{sign}{distance} F1000",  # Movimiento
+            f"G1 {axis}{sign}{distance} F{feedrate}",  # Movimiento
             "G90"   # Volver a absoluto
         ]
         
         self.log(f"🔍 DEBUG: speed_type={speed_type}, speed_mm={speed_mm}, step_delay={step_delay}s")
-        for cmd in commands:
+        for i, cmd in enumerate(commands):
             self.send_command(cmd)
-            time.sleep(step_delay)  # Delay variable según velocidad
+            # Delay adicional después de M120 para permitir procesamiento
+            if i == 0 and cmd.startswith("M120"):
+                time.sleep(0.1)  # Delay extra para comando de velocidad
+            else:
+                time.sleep(step_delay)  # Delay normal
         
         # Solicitar estado
         time.sleep(0.3)
