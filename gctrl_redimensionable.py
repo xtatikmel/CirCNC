@@ -1,7 +1,7 @@
 """
-CIRCE CNC - CONTROLADOR DE PLOTTER
-==================================
-Versión inspirada en la mitología griega: Transformación y Control.
+CIRCNC - CONTROLADOR DE PLOTTER
+==============================
+Versión: Transformación y Control.
 
 ✅ Control manual paso a paso FUNCIONAL
 ✅ Gráfica completamente visible y redimensionable
@@ -113,10 +113,16 @@ class GCodeController:
         
         
         self.machine_limits = {
-            'x': {'min': -100, 'max': 100},
-            'y': {'min': -100, 'max': 100},
-            'z': {'min': -5, 'max': 5}
+            'x': {'min': 0, 'max': 80},
+            'y': {'min': 0, 'max': 80},
+            'z': {'min': 0, 'max': 180}
         }
+    
+    def set_machine_limits(self, max_val):
+        """Actualiza los límites de la máquina en caliente"""
+        self.machine_limits['x']['max'] = max_val
+        self.machine_limits['y']['max'] = max_val
+        self.log(f"📍 Área de trabajo actualizada: {max_val}x{max_val}mm")
         
         self.SPEEDS = {
             'muy_lento': 0.1,
@@ -456,7 +462,7 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Circe CNC - Control Avanzado - Paradoja Devs")
+        self.root.title("CirCNC - Control Avanzado - Paradoja Devs")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
@@ -480,14 +486,14 @@ class GCodeGUI:
         self.update_progress()
         
         # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
-        self.log(r"  _____ _                _   _  _____ ")
-        self.log(r" / ____(_)              | \ | |/ ____|")
-        self.log(r"| |     _ _ __ ___ ___  |  \| | |     ")
-        self.log(r"| |    | | '__/ __/ _ \ | . ` | |     ")
-        self.log(r"| |____| | | | (_|  __/ | |\  | |____ ")
-        self.log(r" \_____|_|_|  \___\___| |_| \_|\_____|")
-        self.log("-" * 40)
-        self.log("🪄 CirCNC: Transformación y Control Iniciados")
+        self.log(r"   _____ _        _____ _   _  _____ ")
+        self.log(r"  / ____(_)      / ____| \ | |/ ____|")
+        self.log(r" | |     _ _ __ | |    |  \| | |     ")
+        self.log(r" | |    | | '__|| |    | . ` | |     ")
+        self.log(r" | |____| | |   | |____| |\  | |____ ")
+        self.log(r"  \_____|_|_|    \_____|_| \_|\_____|")
+        self.log("-" * 42)
+        self.log("🪄 CirCNC: El Poder de la Transformación")
         
         # Estado del cronómetro
         self.job_seconds = 0
@@ -511,9 +517,18 @@ class GCodeGUI:
         self.connect_btn = ttk.Button(control_frame, text="Conectar", command=self.toggle_connection)
         self.connect_btn.grid(row=0, column=3, padx=5)
         
+        # Perfiles de Máquina
+        ttk.Label(control_frame, text="Perfil Motor:").grid(row=0, column=4, padx=5)
+        self.profile_var = tk.StringVar(value="80mm (Nema 9294)")
+        self.profile_combo = ttk.Combobox(control_frame, textvariable=self.profile_var, 
+                                          values=["80mm (Nema 9294)", "40mm (DVD Stepper)"], 
+                                          state="readonly", width=18)
+        self.profile_combo.grid(row=0, column=5, padx=5)
+        self.profile_combo.bind("<<ComboboxSelected>>", self.on_profile_change)
+        
         # Velocidades
         speed_frame = ttk.LabelFrame(control_frame, text="Velocidad", padding="5")
-        speed_frame.grid(row=0, column=4, columnspan=3, sticky=(tk.W, tk.E), padx=10)
+        speed_frame.grid(row=0, column=6, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
         ttk.Button(speed_frame, text="🐌 M.LENTO", 
                    command=lambda: self.set_speed('muy_lento'), width=12).grid(row=0, column=0, padx=2)
@@ -527,7 +542,7 @@ class GCodeGUI:
                    command=lambda: self.set_speed('muy_rapido'), width=12).grid(row=0, column=4, padx=2)
         
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
-        self.speed_label.grid(row=1, column=4, columnspan=3)
+        self.speed_label.grid(row=1, column=6, columnspan=3)
         
         # === ISOLOGOTIPO (Top Right) ===
         try:
@@ -539,7 +554,7 @@ class GCodeGUI:
                 logo_img = logo_img.resize((int(60 * aspect_ratio), 60), Image.Resampling.LANCZOS)
                 self.logo_photo = ImageTk.PhotoImage(logo_img)
                 self.logo_label = ttk.Label(control_frame, image=self.logo_photo)
-                self.logo_label.grid(row=0, column=7, rowspan=2, padx=20, sticky=tk.E)
+                self.logo_label.grid(row=0, column=9, rowspan=2, padx=20, sticky=tk.E)
         except Exception as e:
             print(f"Error cargando logotipo: {e}")
             
@@ -607,9 +622,10 @@ class GCodeGUI:
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
         
-        # Límites del área de trabajo (Fuera de los ejes o en el borde)
-        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
-        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        # Límites del área de trabajo (inicial 80x80)
+        self.work_area_rect = patches.Rectangle((0, 0), 80, 80, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--')
+        self.ax.add_patch(self.work_area_rect)
+        self.work_area_text = self.ax.text(40, 81, 'Área de Trabajo: 80×80mm', ha='center', fontsize=8, color='red', weight='bold')
         
         # Inicializar punto cruz
         self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
@@ -714,6 +730,24 @@ class GCodeGUI:
             self.controller.send_command(cmd)
             self.manual_cmd_var.set("")
             
+    def on_profile_change(self, event=None):
+        """Maneja el cambio de perfil de máquina (80mm o 40mm)"""
+        profile = self.profile_var.get()
+        if "80mm" in profile:
+            limit = 80
+        else:
+            limit = 40
+            
+        self.controller.set_machine_limits(limit)
+        
+        # Actualizar visualización (solo si ya se ha renderizado)
+        try:
+            self.ax.set_xlim(-5, 95)
+            self.ax.set_ylim(-5, 95)
+            self.plot_gcode() # Redibuja todo incluyendo los nuevos límites
+        except:
+            pass
+            
     def update_time_estimation(self):
         """Calcula el tiempo estimado basado en distintas velocidades (F) y retrasos del software/hardware"""
         # +0.5s por comando de servo (constante)
@@ -757,6 +791,8 @@ class GCodeGUI:
             if self.controller.connect(port):
                 self.connect_btn.configure(text="Desconectar")
                 self.start_btn.configure(state=tk.NORMAL)
+                # Forzar actualización de límites al conectar
+                self.on_profile_change()
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")
@@ -795,8 +831,10 @@ class GCodeGUI:
         self.ax.set_aspect('equal', adjustable='box')
         
         # Límites del área de trabajo
-        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
-        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        limit = self.controller.machine_limits['x']['max']
+        self.work_area_rect = patches.Rectangle((0, 0), limit, limit, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--')
+        self.ax.add_patch(self.work_area_rect)
+        self.work_area_text = self.ax.text(limit/2, limit+1, f'Área de Trabajo: {limit}×{limit}mm', ha='center', fontsize=8, color='red', weight='bold')
         
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
@@ -902,12 +940,18 @@ class GCodeGUI:
         messagebox.showinfo("Trabajo Completado", f"¡El archivo G-code ha terminado de ejecutarse!\nTiempo total: {mins:02d}:{secs:02d}")
         
     def log(self, message):
+        """Añade un mensaje al log de forma segura para hilos"""
+        self.root.after(0, self._append_to_log, message)
+        
+    def _append_to_log(self, message):
+        """Método interno ejecutado en el hilo principal"""
         self.log_area.insert(tk.END, message + "\n")
         self.log_area.see(tk.END)
     
     def update_position(self):
-        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / 90.00 mm")
-        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / 90.00 mm")
+        limit = self.controller.machine_limits['x']['max']
+        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / {limit:.2f} mm")
+        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / {limit:.2f} mm")
         # Mostramos el ángulo real del servo para Z
         self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
         

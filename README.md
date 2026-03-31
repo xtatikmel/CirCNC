@@ -1,4 +1,4 @@
-# Circe CNC
+# CirCNC
 
 ```
   _____ _                _   _  _____ 
@@ -10,7 +10,7 @@
 ```
 
 ## Descripción
-**Circe CNC** es una aplicación avanzada inspirada en la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que Circe transformaba la realidad con precisión, esta herramienta permite transformar diseños complejos en movimientos mecánicos exactos.
+**CirCNC** es una aplicación avanzada inspirada en Circe, la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que ella transformaba la realidad con precisión, esta herramienta permite convertir diseños digitales en movimientos mecánicos exactos.
 
 Desarrollada por 'Paradoja Developers', permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
 

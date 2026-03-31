@@ -1,5 +1,5 @@
 """
-CIRCE CNC - DEMO INTERACTIVO - JOYSTICK
+CirCNC - DEMO INTERACTIVO - JOYSTICK
 =======================================
 Versión: Transformación y Control.
 ✅ Control en tiempo real con joystick/teclado
@@ -28,7 +28,7 @@ MICROSTEPS_PER_REV = STEPS_PER_REV * MICROSTEPS
 SCREW_PITCH = 0.020  # pulgadas
 SCREW_PITCH_MM = SCREW_PITCH * 25.4  # 0.508 mm
 DISTANCE_PER_MICROSTEP = (SCREW_PITCH / MICROSTEPS) * 25.4  # 0.127 mm
-EFFECTIVE_STROKE_MM = 3.150 * 25.4  # 80.01 mm
+EFFECTIVE_STROKE_MM = 80.0  # 80.00 mm
 
 # ===== PARÁMETROS L293D =====
 # Motor X: IN1=2, IN2=3, EN=4
@@ -301,7 +301,7 @@ class JoystickGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("🎮 CIRCE CNC - Control con Joystick Virtual")
+        self.root.title("🎮 CirCNC - Control con Joystick Virtual")
         self.root.geometry("1200x900")
         self.root.configure(bg="#1e1e1e")
         
@@ -329,7 +329,7 @@ class JoystickGUI:
         self.log("| |____| | | | (_|  __/ | |\  | |____ ")
         self.log(" \\_____|_|_|  \\___\\___| |_| \\_|\\_____|")
         self.log("-" * 40)
-        self.log("🪄 Circe CNC: El poder de la transformación.")
+        self.log("🪄 CirCNC: El poder de la transformación.")
     
     def create_widgets(self):
         """Crea la interfaz gráfica"""
@@ -433,11 +433,11 @@ CONTROL:
         limits_inner.pack(fill=tk.X)
         
         ttk.Label(limits_inner, text="X:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=5)
-        self.x_limit_label = ttk.Label(limits_inner, text="0.00 → 80.01", font=("Arial", 10), foreground="cyan")
+        self.x_limit_label = ttk.Label(limits_inner, text="0.00 → 80.00", font=("Arial", 10), foreground="cyan")
         self.x_limit_label.pack(side=tk.LEFT, padx=5)
         
         ttk.Label(limits_inner, text="Y:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=20)
-        self.y_limit_label = ttk.Label(limits_inner, text="0.00 → 80.01", font=("Arial", 10), foreground="lime")
+        self.y_limit_label = ttk.Label(limits_inner, text="0.00 → 80.00", font=("Arial", 10), foreground="lime")
         self.y_limit_label.pack(side=tk.LEFT, padx=5)
         
         # Velocidad

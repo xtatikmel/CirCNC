@@ -243,14 +243,14 @@ class TestLimitSwitchVerification:
         """Test that soft limits prevent exceeding max X"""
         controller = GCodeController()
         
-        result = controller.check_limits(x=41)  # Max is 40
+        result = controller.check_limits(x=81)  # Max is 80
         assert result is False
         
     def test_soft_limits_prevent_exceed_max_y(self):
         """Test that soft limits prevent exceeding max Y"""
         controller = GCodeController()
         
-        result = controller.check_limits(y=41)  # Max is 40
+        result = controller.check_limits(y=81)  # Max is 80
         assert result is False
         
     def test_soft_limits_allow_valid_positions(self):
@@ -269,14 +269,14 @@ class TestLimitSwitchVerification:
         controller.port.is_open = True
         controller.speed_var = Mock()
         controller.speed_var.get.return_value = "1"
-        controller.position = {'x': 40, 'y': 20, 'z': 2}
+        controller.position = {'x': 80, 'y': 20, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
             result = controller.jog('x+', 1.0)
             
         # Movement should be blocked
         assert result is False
-        assert controller.position['x'] == 40
+        assert controller.position['x'] == 80
 
 
 class TestHardwareConfigurationValidation:
@@ -289,7 +289,7 @@ class TestHardwareConfigurationValidation:
         controller = GCodeController()
         
         # X axis should be configured with proper limits
-        assert controller.machine_limits['x']['max'] == 40
+        assert controller.machine_limits['x']['max'] == 80
         
     def test_motor_y_connected_to_port_1(self):
         """Test that Y motor is configured for Arduino Motor Shield port 1"""
@@ -297,7 +297,7 @@ class TestHardwareConfigurationValidation:
         controller = GCodeController()
         
         # Y axis should be configured with proper limits
-        assert controller.machine_limits['y']['max'] == 40
+        assert controller.machine_limits['y']['max'] == 80
         
     def test_servo_connected_to_pin_10(self):
         """Test that servo (Z axis) is configured for pin 10"""

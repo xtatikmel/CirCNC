@@ -22,8 +22,8 @@ class GCodeController:
         self.position = {'x': 0, 'y': 0, 'z': 0}
         # Límites de la máquina en mm
         self.machine_limits = {
-            'x': {'min': 0, 'max': 40},  # Límite X: 40mm
-            'y': {'min': 0, 'max': 40},  # Límite Y: 40mm
+            'x': {'min': 0, 'max': 80},  # Límite X: 80mm
+            'y': {'min': 0, 'max': 80},  # Límite Y: 80mm
             'z': {'min': 0, 'max': 5}    # Límite Z: 5mm
         }
         self.serial_lock = threading.Lock()

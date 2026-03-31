@@ -35,9 +35,9 @@ class TestGCodeControllerInit:
         controller = GCodeController()
         
         assert controller.machine_limits['x']['min'] == 0
-        assert controller.machine_limits['x']['max'] == 40
+        assert controller.machine_limits['x']['max'] == 80
         assert controller.machine_limits['y']['min'] == 0
-        assert controller.machine_limits['y']['max'] == 40
+        assert controller.machine_limits['y']['max'] == 80
         assert controller.machine_limits['z']['min'] == 0
         assert controller.machine_limits['z']['max'] == 5
         
@@ -137,9 +137,9 @@ class TestCheckLimits:
         controller = GCodeController()
         
         assert controller.check_limits(x=-1) is False
-        assert controller.check_limits(x=41) is False
+        assert controller.check_limits(x=81) is False
         assert controller.check_limits(y=-1) is False
-        assert controller.check_limits(y=41) is False
+        assert controller.check_limits(y=81) is False
         assert controller.check_limits(z=-1) is False
         assert controller.check_limits(z=6) is False
         

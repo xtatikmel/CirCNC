@@ -1,5 +1,5 @@
 /* 
-  CIRCE CNC - Firmware Optimizado (Bresenham)
+  CirCNC - Firmware Optimizado (Bresenham)
   Motores: 18° (Modelo 9294) | Servo: MG90
   Concepto: Transformación y Control.
 */
@@ -81,7 +81,7 @@ void setup() {
   actuatorPos.z = Zmax;
 
   //  Notifications!!!
-  Serial.println("🪄 Circe CNC (Bresenham Optimized) ready!");
+  Serial.println("🪄 CirCNC (Bresenham Optimized) ready!");
   Serial.print("X range: "); 
   Serial.print(Xmin); Serial.print(" to "); Serial.print(Xmax); Serial.println(" mm"); 
   Serial.print("Y range: "); 
