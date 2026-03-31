@@ -1,6 +1,6 @@
 # CirCNC
 
-![Banner](images/banner.png)
+![Banner](images/banner.jpg)
 
 ```
   _____ _                _   _  _____ 
