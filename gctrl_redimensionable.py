@@ -118,23 +118,16 @@ class GCodeController:
             'z': {'min': 0, 'max': 180}
         }
         
-        self.SPEEDS = {
-            'muy_lento': 0.1,
-            'lento': 0.5,
-            'normal': 1.0,
-            'rapido': 2.0,
-            'muy_rapido': 5.0
+        # Distancia de paso para control manual (en mm por movimiento)
+        # No afecta la velocidad real, solo la distancia recorrida por cada paso
+        self.STEP_DISTANCES = {
+            '1mm': 1.0,
+            '5mm': 5.0,
+            '10mm': 10.0,
+            '25mm': 25.0,
+            '50mm': 50.0
         }
-        # Feedrates para control manual (en RPM para Arduino)
-        # El comando M120 S<rpm> espera valores entre 50-500
-        self.FEEDRATES = {
-            'muy_lento': 50,
-            'lento': 100,
-            'normal': 200,
-            'rapido': 300,
-            'muy_rapido': 400
-        }
-        self.current_speed = 'normal'
+        self.current_step = '10mm'  # Valor por defecto
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
         self.completion_callback = None
@@ -292,12 +285,11 @@ class GCodeController:
             return False
         
         axis = axis.upper()
-        speed_mm = self.SPEEDS.get(speed_type, 1.0)
-        feedrate = self.FEEDRATES.get(speed_type, 1000)  # Feedrate dinámico
+        step_distance = self.STEP_DISTANCES.get(speed_type, 10.0)
         
         # Calcular nueva posición / Control de Servo Z
         if axis == 'Z':
-            step_deg = int(speed_mm * 10) # 0.5 -> 5°, 1.0 -> 10°, 2.0 -> 20°
+            step_deg = int(step_distance)  # step_distance ya es distancia en mm
             if direction == '+':
                 self.servo_angle += step_deg
             else:
@@ -306,14 +298,14 @@ class GCodeController:
             self.servo_angle = max(0, min(180, self.servo_angle)) # Límite físico del servo
             
             self.send_command(f"M300 S{self.servo_angle}")
-            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Velocidad {speed_type}")
+            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Paso {speed_type}")
             return True
         
         new_pos = self.position.copy()
         if direction == '+':
-            new_pos[axis.lower()] += speed_mm
+            new_pos[axis.lower()] += step_distance
         else:
-            new_pos[axis.lower()] -= speed_mm
+            new_pos[axis.lower()] -= step_distance
         
         # Verificar límites (Comentado para permitir control libre al buscar el origen)
         # if not self.check_limits(
@@ -326,7 +318,7 @@ class GCodeController:
         
         # Enviar comando G-code con feedrate dinámico
         sign = "+" if direction == "+" else ""
-        distance = speed_mm if direction == "+" else -speed_mm
+        distance = step_distance if direction == "+" else -step_distance
         
         # Calcular delay basado en velocidad (menor delay = más rápido)
         # Esto complementa la velocidad del motor en Arduino
@@ -340,34 +332,30 @@ class GCodeController:
         step_delay = delay_mapping.get(speed_type, 0.1)
         
         commands = [
-            f"M120 S{feedrate}",  # Cambiar velocidad del motor
             "G91",  # Modo relativo
-            f"G1 {axis}{sign}{distance} F{feedrate}",  # Movimiento
+            f"G1 {axis}{sign}{distance}",  # Movimiento
             "G90"   # Volver a absoluto
         ]
         
-        self.log(f"🔍 DEBUG: speed_type={speed_type}, speed_mm={speed_mm}, step_delay={step_delay}s")
-        for i, cmd in enumerate(commands):
+        self.log(f"🔍 DEBUG: speed_type={speed_type}, step_distance={step_distance}, step_delay={step_delay}s")
+        for cmd in commands:
             self.send_command(cmd)
-            # Delay adicional después de M120 para permitir procesamiento
-            if i == 0 and cmd.startswith("M120"):
-                time.sleep(0.1)  # Delay extra para comando de velocidad
-            else:
-                time.sleep(step_delay)  # Delay normal
+            time.sleep(step_delay)  # Delay variable según velocidad
         
         # Solicitar estado
         time.sleep(0.3)
         self.send_command("?")
         
-        self.log(f"📍 {speed_type.upper()}: {axis}{direction} {speed_mm}mm")
+        self.log(f"📍 {speed_type.upper()}: {axis}{direction} {step_distance}mm")
         return True
     
-    def set_speed(self, speed_type):
-        if speed_type in self.SPEEDS:
-            self.current_speed = speed_type
-            speed_mm = self.SPEEDS[speed_type]
-            self.log(f"⚙️  Velocidad: {speed_type.upper()} ({speed_mm}mm)")
-            self.log(f"🔍 DEBUG: set_speed called - speed_type={speed_type}, speed_mm={speed_mm}, current_speed={self.current_speed}")
+    def set_step(self, step_distance):
+        """Configura la distancia de paso para control manual"""
+        if step_distance in self.STEP_DISTANCES:
+            self.current_step = step_distance
+            distance_mm = self.STEP_DISTANCES[step_distance]
+            self.log(f"⚙️  Paso: {step_distance.upper()} ({distance_mm}mm por movimiento)")
+            self.log(f"🔍 DEBUG: set_step called - step_distance={step_distance}, distance_mm={distance_mm}, current_step={self.current_step}")
             return True
         return False
     
@@ -562,22 +550,22 @@ class GCodeGUI:
         self.profile_combo.grid(row=0, column=5, padx=5)
         self.profile_combo.bind("<<ComboboxSelected>>", self.on_profile_change)
         
-        # Velocidades
-        speed_frame = ttk.LabelFrame(control_frame, text="Velocidad", padding="5")
+        # Distancia de paso para control manual
+        speed_frame = ttk.LabelFrame(control_frame, text="Distancia de Paso", padding="5")
         speed_frame.grid(row=0, column=6, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
-        ttk.Button(speed_frame, text="🐌 M.LENTO", 
-                   command=lambda: self.set_speed('muy_lento'), width=12).grid(row=0, column=0, padx=2)
-        ttk.Button(speed_frame, text="🐢 LENTO", 
-                   command=lambda: self.set_speed('lento'), width=12).grid(row=0, column=1, padx=2)
-        ttk.Button(speed_frame, text="🚶 NORMAL", 
-                   command=lambda: self.set_speed('normal'), width=12).grid(row=0, column=2, padx=2)
-        ttk.Button(speed_frame, text="🚗 RÁPIDO", 
-                   command=lambda: self.set_speed('rapido'), width=12).grid(row=0, column=3, padx=2)
-        ttk.Button(speed_frame, text="🚀 M.RÁPIDO", 
-                   command=lambda: self.set_speed('muy_rapido'), width=12).grid(row=0, column=4, padx=2)
+        ttk.Button(speed_frame, text="1mm", 
+                   command=lambda: self.set_step('1mm'), width=12).grid(row=0, column=0, padx=2)
+        ttk.Button(speed_frame, text="5mm", 
+                   command=lambda: self.set_step('5mm'), width=12).grid(row=0, column=1, padx=2)
+        ttk.Button(speed_frame, text="10mm", 
+                   command=lambda: self.set_step('10mm'), width=12).grid(row=0, column=2, padx=2)
+        ttk.Button(speed_frame, text="25mm", 
+                   command=lambda: self.set_step('25mm'), width=12).grid(row=0, column=3, padx=2)
+        ttk.Button(speed_frame, text="50mm", 
+                   command=lambda: self.set_step('50mm'), width=12).grid(row=0, column=4, padx=2)
         
-        self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
+        self.speed_label = ttk.Label(control_frame, text="Paso: 10mm", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=6, columnspan=3)
         
         # === ISOLOGOTIPO (Top Right) ===
@@ -809,9 +797,9 @@ class GCodeGUI:
         
         self.time_label.configure(text=f"⏱️ Tiempo Estimado:\nF1000: {mins_1000}m {secs_1000}s  |  F2000: {mins_2000}m {secs_2000}s")
     
-    def set_speed(self, speed_type):
-        self.controller.set_speed(speed_type)
-        self.speed_label.configure(text=f"Velocidad: {speed_type.upper()}")
+    def set_step(self, step_distance):
+        self.controller.set_step(step_distance)
+        self.speed_label.configure(text=f"Paso: {step_distance.upper()}")
     
     def update_ports(self):
         ports = self.controller.find_serial_ports()
