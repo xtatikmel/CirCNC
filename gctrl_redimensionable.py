@@ -117,12 +117,6 @@ class GCodeController:
             'y': {'min': 0, 'max': 80},
             'z': {'min': 0, 'max': 180}
         }
-    
-    def set_machine_limits(self, max_val):
-        """Actualiza los límites de la máquina en caliente"""
-        self.machine_limits['x']['max'] = max_val
-        self.machine_limits['y']['max'] = max_val
-        self.log(f"📍 Área de trabajo actualizada: {max_val}x{max_val}mm")
         
         self.SPEEDS = {
             'muy_lento': 0.1,
@@ -132,11 +126,16 @@ class GCodeController:
             'muy_rapido': 5.0
         }
         self.current_speed = 'normal'
-        
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
         self.completion_callback = None
         self.serial_lock = threading.Lock()
+    
+    def set_machine_limits(self, max_val):
+        """Actualiza los límites de la máquina en caliente"""
+        self.machine_limits['x']['max'] = max_val
+        self.machine_limits['y']['max'] = max_val
+        self.log(f"📍 Área de trabajo actualizada: {max_val}x{max_val}mm")
     
     def set_log_callback(self, callback):
         self.log_callback = callback
@@ -390,40 +389,44 @@ class GCodeController:
         self.gcode_index = 0
         
         def _stream():
-            self.send_command("G90")
-            time.sleep(0.2)
-            
-            while self.gcode_index < len(self.gcode) and self.streaming:
-                if self.paused:
-                    time.sleep(0.1)
-                    continue
+            try:
+                self.send_command("G90")
+                time.sleep(0.2)
                 
-                line = self.gcode[self.gcode_index]
-                
-                # Notificar a la GUI qué línea estamos procesando
-                self.log(f"[L{self.gcode_index + 1}] → {line}")
-                
-                # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
-                if "M300" in line.upper():
-                    match = re.search(r'S(\d+)', line.upper())
-                    if match:
-                        self.servo_angle = int(match.group(1))
-                        
-                self.send_command(line, log_it=False) # Ya lo logueamos arriba con el número de línea
-                self.gcode_index += 1
-                
-                # Pedir actualización de posición (estado) cada 2 líneas para la UI
-                if self.gcode_index % 2 == 0:
-                    self.send_command("?", log_it=False)
+                while self.gcode_index < len(self.gcode) and self.streaming:
+                    if self.paused:
+                        time.sleep(0.1)
+                        continue
                     
-                time.sleep(0.3)
-            
-            if self.streaming:
+                    line = self.gcode[self.gcode_index]
+                    
+                    # Notificar a la GUI qué línea estamos procesando
+                    self.log(f"[L{self.gcode_index + 1}] → {line}")
+                    
+                    # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
+                    if "M300" in line.upper():
+                        match = re.search(r'S(\d+)', line.upper())
+                        if match:
+                            self.servo_angle = int(match.group(1))
+                            
+                    self.send_command(line, log_it=False)
+                    self.gcode_index += 1
+                    
+                    # Pedir actualización de posición (estado) cada 2 líneas para la UI
+                    if self.gcode_index % 2 == 0:
+                        self.send_command("?", log_it=False)
+                        
+                    time.sleep(0.3)
+                
+                if self.streaming:
+                    self.log("🏁 G-code enviado completamente al puerto serial")
+                    self.return_to_origin()
+                    if self.completion_callback:
+                        self.completion_callback()
+            except Exception as e:
+                self.log(f"💥 Error crítico en streaming: {e}")
+            finally:
                 self.streaming = False
-                self.log("✅ G-code completado")
-                self.return_to_origin()
-                if self.completion_callback:
-                    self.completion_callback()
         
         threading.Thread(target=_stream, daemon=True).start()
     
@@ -489,8 +492,8 @@ class GCodeGUI:
         self.update_progress()
         
         # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
-        self.log(r"  _____ _      _____ _   _  _____ ")
-        self.log(r" / ____(_)    / ____| \ | |/ ____|")
+        self.log(r"  _____ _       _____ _   _  _____ ")
+        self.log(r" / ____(_)     / ____| \ | |/ ____|")
         self.log(r"| |     _ _ __| |    |  \| | |     ")
         self.log(r"| |    | | '__| |    | . ` | |     ")
         self.log(r"| |____| | |  | |____| |\  | |____ ")
@@ -941,9 +944,18 @@ class GCodeGUI:
         self.start_btn.configure(state=tk.NORMAL)
         self.pause_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.DISABLED)
+        
         mins = self.job_seconds // 60
         secs = self.job_seconds % 60
-        messagebox.showinfo("Trabajo Completado", f"¡El archivo G-code ha terminado de ejecutarse!\nTiempo total: {mins:02d}:{secs:02d}")
+        
+        self.log(f"🔔 NOTIFICACIÓN: Trabajo completado en {mins:02d}:{secs:02d}")
+        
+        # Mostrar caja de diálogo asegurando que esté en frente
+        messagebox.showinfo("Proceso Finalizado", 
+                             f"¡El archivo G-code ha terminado de ejecutarse!\n\n"
+                             f"⏱️ Tiempo total: {mins:02d}:{secs:02d}\n"
+                             f"📍 La máquina ha retornado al origen.",
+                             parent=self.root)
         
     def log(self, message):
         """Añade un mensaje al log de forma segura para hilos"""
@@ -986,17 +998,18 @@ class GCodeGUI:
             self.progress_var.set(percent)
             self.progress_label.configure(text=f"{current} / {total} líneas ({percent}%)")
             
-            # Resaltar la línea actual en el área de G-code
-            self.highlight_gcode_line(current)
+            # Resaltar la línea actual en el área de G-code (ajustando a 1-indexed de Tkinter)
+            if self.controller.streaming:
+                self.highlight_gcode_line(current + 1)
         
         self.root.after(100, self.update_progress)
 
-    def highlight_gcode_line(self, line_index):
+    def highlight_gcode_line(self, line_num):
         """Resalta la línea actual y hace scroll para mantenerla visible"""
         self.gcode_area.tag_remove("current_line", "1.0", tk.END)
-        if line_index > 0:
-            pos = f"{line_index}.0"
-            end = f"{line_index}.end"
+        if line_num > 0:
+            pos = f"{line_num}.0"
+            end = f"{line_num}.end"
             self.gcode_area.tag_add("current_line", pos, end)
             self.gcode_area.see(pos)
     
