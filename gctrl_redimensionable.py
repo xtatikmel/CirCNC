@@ -248,7 +248,7 @@ class GCodeController:
                 self.log(f"❌ Error lectura: {e}")
                 break
     
-    def send_command(self, command):
+    def send_command(self, command, log_it=True):
         if not self.port or not self.port.is_open:
             return False
         
@@ -258,7 +258,7 @@ class GCodeController:
                     command = command + '\n'
                 
                 self.port.write(command.encode())
-                if command.strip() != "?":
+                if log_it and command.strip() != "?":
                     self.log(f"→ {command.strip()}")
                 return True
         except Exception as e:
@@ -400,18 +400,21 @@ class GCodeController:
                 
                 line = self.gcode[self.gcode_index]
                 
+                # Notificar a la GUI qué línea estamos procesando
+                self.log(f"[L{self.gcode_index + 1}] → {line}")
+                
                 # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
                 if "M300" in line.upper():
                     match = re.search(r'S(\d+)', line.upper())
                     if match:
                         self.servo_angle = int(match.group(1))
                         
-                self.send_command(line)
+                self.send_command(line, log_it=False) # Ya lo logueamos arriba con el número de línea
                 self.gcode_index += 1
                 
                 # Pedir actualización de posición (estado) cada 2 líneas para la UI
                 if self.gcode_index % 2 == 0:
-                    self.send_command("?")
+                    self.send_command("?", log_it=False)
                     
                 time.sleep(0.3)
             
@@ -486,12 +489,12 @@ class GCodeGUI:
         self.update_progress()
         
         # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
-        self.log(r"   _____ _        _____ _   _  _____ ")
-        self.log(r"  / ____(_)      / ____| \ | |/ ____|")
-        self.log(r" | |     _ _ __ | |    |  \| | |     ")
-        self.log(r" | |    | | '__|| |    | . ` | |     ")
-        self.log(r" | |____| | |   | |____| |\  | |____ ")
-        self.log(r"  \_____|_|_|    \_____|_| \_|\_____|")
+        self.log(r"  _____ _      _____ _   _  _____ ")
+        self.log(r" / ____(_)    / ____| \ | |/ ____|")
+        self.log(r"| |     _ _ __| |    |  \| | |     ")
+        self.log(r"| |    | | '__| |    | . ` | |     ")
+        self.log(r"| |____| | |  | |____| |\  | |____ ")
+        self.log(r" \_____|_|_|   \_____|_| \_|\_____|")
         self.log("-" * 42)
         self.log("🪄 CirCNC: El Poder de la Transformación")
         
@@ -600,6 +603,9 @@ class GCodeGUI:
         # Botón cargar
         self.load_btn = ttk.Button(left_frame, text="📂 Cargar G-code", command=self.open_file, width=30)
         self.load_btn.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
+        
+        # Tag para resaltar línea actual
+        self.gcode_area.tag_configure("current_line", background="#ffffcf", foreground="black", font=("Courier", 9, "bold"))
         
         # Botón centrar en origen
         self.normalize_btn = ttk.Button(left_frame, text="🎯 Centrar diseño en Origen (0,0)", command=self.normalize_gcode, state=tk.DISABLED, width=30)
@@ -808,8 +814,8 @@ class GCodeGUI:
             self.log(f"📂 Cargando: {fn}")
             if self.controller.load_gcode(fn):
                 self.gcode_area.delete(1.0, tk.END)
-                for i, line in enumerate(self.controller.gcode[:40], 1):
-                    self.gcode_area.insert(tk.END, f"{i:3d}: {line}\n")
+                for i, line in enumerate(self.controller.gcode, 1):
+                    self.gcode_area.insert(tk.END, f"{i:4d}: {line}\n")
                 
                 if self.parser.parse(fn):
                     self.plot_gcode()
@@ -979,8 +985,20 @@ class GCodeGUI:
             
             self.progress_var.set(percent)
             self.progress_label.configure(text=f"{current} / {total} líneas ({percent}%)")
+            
+            # Resaltar la línea actual en el área de G-code
+            self.highlight_gcode_line(current)
         
         self.root.after(100, self.update_progress)
+
+    def highlight_gcode_line(self, line_index):
+        """Resalta la línea actual y hace scroll para mantenerla visible"""
+        self.gcode_area.tag_remove("current_line", "1.0", tk.END)
+        if line_index > 0:
+            pos = f"{line_index}.0"
+            end = f"{line_index}.end"
+            self.gcode_area.tag_add("current_line", pos, end)
+            self.gcode_area.see(pos)
     
     def on_closing(self):
         if messagebox.askokcancel("Salir", "¿Cerrar aplicación?"):
