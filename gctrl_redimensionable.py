@@ -23,6 +23,8 @@ from matplotlib.figure import Figure
 import matplotlib.patches as patches
 import re
 import math
+import os
+from PIL import Image, ImageTk
 
 # ===== PARSER DE G-CODE =====
 class GCodeParser:
@@ -462,21 +464,30 @@ class GCodeGUI:
         self.controller.set_completion_callback(self.on_job_completed)
         self.parser = GCodeParser()
         
+        # Configurar icono de la aplicación
+        try:
+            icon_path = os.path.join("images", "Logo.png")
+            if os.path.exists(icon_path):
+                self.icon_img = ImageTk.PhotoImage(Image.open(icon_path))
+                self.root.iconphoto(False, self.icon_img)
+        except Exception as e:
+            print(f"Error cargando icono: {e}")
+            
         self.create_widgets()
         self.update_ports()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.update_position()
         self.update_progress()
         
-        # Mensaje de bienvenida con Arte ASCII
-        self.log("  _____ _                _   _  _____ ")
-        self.log(" / ____(_)              | \ | |/ ____|")
-        self.log("| |     _ _ __ ___ ___  |  \| | |     ")
-        self.log("| |    | | '__/ __/ _ \ | . ` | |     ")
-        self.log("| |____| | | | (_|  __/ | |\  | |____ ")
-        self.log(" \_____|_|_|  \___\__| | \_|\_____|")
+        # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
+        self.log(r"  _____ _                _   _  _____ ")
+        self.log(r" / ____(_)              | \ | |/ ____|")
+        self.log(r"| |     _ _ __ ___ ___  |  \| | |     ")
+        self.log(r"| |    | | '__/ __/ _ \ | . ` | |     ")
+        self.log(r"| |____| | | | (_|  __/ | |\  | |____ ")
+        self.log(r" \_____|_|_|  \___\___| |_| \_|\_____|")
         self.log("-" * 40)
-        self.log("🪄 Circe CNC: Transformación y Control Iniciados")
+        self.log("🪄 CirCNC: Transformación y Control Iniciados")
         
         # Estado del cronómetro
         self.job_seconds = 0
@@ -518,6 +529,20 @@ class GCodeGUI:
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=4, columnspan=3)
         
+        # === ISOLOGOTIPO (Top Right) ===
+        try:
+            logo_path = os.path.join("images", "isologotipo.png")
+            if os.path.exists(logo_path):
+                logo_img = Image.open(logo_path)
+                # Redimensionar manteniendo proporción (altura de 60px para el header)
+                aspect_ratio = logo_img.width / logo_img.height
+                logo_img = logo_img.resize((int(60 * aspect_ratio), 60), Image.Resampling.LANCZOS)
+                self.logo_photo = ImageTk.PhotoImage(logo_img)
+                self.logo_label = ttk.Label(control_frame, image=self.logo_photo)
+                self.logo_label.grid(row=0, column=7, rowspan=2, padx=20, sticky=tk.E)
+        except Exception as e:
+            print(f"Error cargando logotipo: {e}")
+            
         # === FILA 1: PANELES PRINCIPALES CON PANED WINDOW ===
         paned = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
         paned.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
