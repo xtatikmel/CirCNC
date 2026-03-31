@@ -1,26 +1,39 @@
-# Resumen de Cambios: Circe CNC - Firmware Optimizado
+# Guía de Evolución: CirCNC 🪄
 
-Se ha creado un nuevo firmware (`E:\GIT\CNC-GCTRL-L293\CNC_code_optimizado\CNC_code_optimizado.ino`) bajo el nombre **Circe CNC**, partiendo de tu archivo base original pero introduciendo mejoras matemáticas y de hardware para el Driver L293D, Motores Nema Modelo 9294 (18°) y Servo SG90/MG90.
+El proyecto ha completado su fase de transformación, adoptando el nombre definitivo de **CirCNC** y añadiendo capacidades de configuración dinámica para diferentes tipos de hardware.
 
-## ¿Qué se ha cambiado?
+## Cambios Clave Realizados
 
-### 1. Reescritura del Matemático de Movimiento (Bresenham)
-> [!IMPORTANT]
-> El antiguo código usaba una lógica de "Mueve todo el motor X y luego todo el motor Y". Se ha reemplazado la función `moveTo` con el **Algoritmo de Bresenham**, el mismo que usa GRBL profesional: avanza un paso un motor, y entrelaza el otro en tiempo real para dibujar diagonales perfectas. 
+### 1. Identidad Visual (CirCNC)
+- **Branding**: Se actualizó el nombre en todas las interfaces de usuario, logs de terminal y archivos de documentación.
+- **Logotipo**: Integración del isologotipo en la esquina superior derecha y configuración del icono de la aplicación.
+- **Arte ASCII**: Limpieza de errores de sintaxis y actualización del mensaje de bienvenida.
 
-### 2. Calibración de Hardware Directa
-- **`stepsPerRevolution = 20;`**: Tú tienes motores de 18 grados (360º / 18º = 20 pasos para dar una vuelta completa). El código viejo lo calculaba pensando en 4096 pasos.
-- **`stepType = SINGLE;`**: Cambiamos la técnica interna de control que usa la librería `AFMotor`. En lugar de tratar de hacer "micro-pasos" (lo cual reduce la fuerza dramáticamente en este tipo de chips y causa que el motor tiemble sin moverse), forzamos tracción completa (`SINGLE`).
-
-### 3. Velocidad Compensada
-- Como bajamos de 4096 a apenas 20 pasos de revolución, necesitas que el controlador le pida a los motores andar muchísimo "más rápido" en RPM para moverse la misma distancia milimétrica, por lo que hemos seteado el `setSpeed(350)` por defecto.
-
-## Pasos para probarlo
-
-1. Abre el archivo `E:\GIT\CNC-GCTRL-L293\CNC_code_optimizado\CNC_code_optimizado.ino` en tu **Arduino IDE**.
-2. Verifica que las librerías `Servo.h` y `AFMotor.h` sigan compilandose bien (botón Visto Bueno).
-3. Súbelo a tu placa Arduino.
-4. Conecta en tu Software de Python y manda la orden `G1 X10 Y10` para corroborar que los motores suenan limpios y hacen una recta pura en diagonal en lugar de una escalera.
-
+### 2. Control de Perfiles de Motor (Nuevo)
 > [!TIP]
-> Si lograste probarlo y sientes que el dibujo es más pequeño o más grande de lo que esperabas, tendrás que afinar la variable matemática: `float StepsPerMillimeterX = 200.0;`. Puedes medir la distancia físicamente, y aplicar una Regla de 3 simple para calcular el valor exacto para tu modelo de varilla roscada/correas.
+> Ahora puedes alternar entre diferentes máquinas sin tocar el código.
+- **Selector de Perfiles**: Añadido un menú desplegable en la interfaz para elegir entre:
+    - **80mm (Nema 9294)**: Para desplazamientos largos y precisos.
+    - **40mm (DVD Stepper)**: Para el prototipo mini basado en lectoras de CD/DVD.
+- **Límites Dinámicos**: Al cambiar el perfil, el software actualiza automáticamente los límites de movimiento y la visualización en el gráfico (recuadro rojo).
+
+### 3. Firmware Optimizado (V1.1)
+- **Límites por Defecto**: Actualizados a 80x80mm para coincidir con el hardware principal.
+- **Respuesta Serial**: Mensaje de inicio actualizado a "CirCNC ready!".
+- **Algoritmo de Bresenham**: Movimientos diagonales suaves y sincronizados.
+
+## Verificación del Sistema
+
+### Software (Python)
+1. Inicia `gctrl_redimensionable.py`.
+2. Observa el título "**CirCNC**" y el logotipo.
+3. Cambia el **Perfil Motor** y verifica que el recuadro rojo en el gráfico se ajuste (80mm o 40mm).
+4. El log confirmará: `📍 Área de trabajo actualizada: XxXmm`.
+
+### Hardware (Arduino)
+1. Carga `CNC_code_optimizado.ino`.
+2. Abre el Monitor Serial (9600 baudios).
+3. Verás el mensaje: `🪄 CirCNC (Bresenham Optimized) ready!`.
+
+---
+**Próximo Paso**: Con los perfiles funcionando, el sistema está listo para pruebas de campo intensivas antes de generar el instalador final (.exe).

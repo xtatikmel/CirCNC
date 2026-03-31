@@ -1,56 +1,56 @@
-# Lanzamiento de Circe CNC 🪄
+# Guía para Colaboradores: CirCNC 🪄
 
-El proyecto ha sido oficialmente renombrado a **Circe CNC**, inspirándose en la diosa de la transformación y el control. Se han actualizado todos los archivos de documentación, interfaces de usuario y comentarios del firmware.
+El proyecto se llama oficialmente **CirCNC**, inspirándose en la diosa de la transformación y el control. El repositorio ya fue renombrado en GitHub. Esta guía es para que tú y tus colaboradores sincronicen sus entornos locales.
 
-## Cambios Realizados
+## Cambios Realizados en el Proyecto
 
-### 1. Documentación Visual
-- **README.md**: Título actualizado y adición de arte ASCII.
-- **Docs**: Los archivos `TESTING.md`, `VERIFICACION.md` y `walkthrough.md` ahora reflejan el nuevo nombre y marca.
+### 1. Documentación Visual y Branding
+- **README.md**: Título **CirCNC** y arte ASCII.
+- **Docs**: `TESTING.md`, `VERIFICACION.md` y `walkthrough.md` actualizados.
+- **Interfaz GUI**: Logotipo integrado, icono de app configurado.
 
 ### 2. Interfaz de Usuario (Python)
-- Se actualizó el título de la ventana en `gctrl_redimensionable.py`, `cnc_interface_python.py` y `demo_joystick_cntrl.py`.
-- Se añadió el **arte ASCII** al inicio de los logs en la terminal de cada aplicación para dar una bienvenida mística al usuario.
+- Título actualizado en `gctrl_redimensionable.py`, `cnc_interface_python.py` y `demo_joystick_cntrl.py`.
+- **Arte ASCII** en el log de inicio de cada aplicación.
+- **Selector de perfil de motor**: 80mm (Nema 9294) o 40mm (DVD Stepper), sin modificar el firmware.
 
 ### 3. Firmware de Arduino
-- Actualizados los comentarios de cabecera y el mensaje de "Ready" que se envía por serial al conectar.
+- Límites por defecto: **80×80mm**.
+- Mensaje serial: `🪄 CirCNC (Bresenham Optimized) ready!`
 
 ---
 
-## Guía para el Cambio de Nombre y Colaboradores
+## Guía para Sincronizar el Repositorio
 
 > [!IMPORTANT]
-> Para que el cambio sea efectivo en la nube y para el resto del equipo, sigue estos pasos:
+> El repositorio ya fue renombrado en GitHub de `CNC-GCTRL-L293` a `CirCNC`. Sigue estos pasos para actualizar tu entorno local.
 
-### 1. Renombrar en GitHub (Tú como administrador)
-1. Ve a la página de tu repositorio en GitHub.
-2. Haz clic en **Settings** (Ajustes).
-3. En la sección **General**, cambia el nombre del repositorio de `CNC-GCTRL-L293` a `Circe-CNC`.
-4. Haz clic en el botón **Rename**.
+### Como Administrador (ya hecho en GitHub)
+Si aún necesitas verificar o repetir el proceso:
+1. Ve a tu repositorio en GitHub → **Settings** → **General**.
+2. Cambia el nombre a `CirCNC` → **Rename**.
 
-### 2. Actualizar tu Repositorio Local
-Una vez renombrado en GitHub, ejecuta estos comandos en tu terminal local:
-
+### Actualizar tu Clon Local
 ```bash
-# Cambiar la URL del servidor remoto
-git remote set-url origin https://github.com/TU_USUARIO/Circe-CNC.git
+# Actualizar la URL del remoto al nuevo nombre
+git remote set-url origin https://github.com/TU_USUARIO/CirCNC.git
 
-# Empujar los cambios que acabo de hacer por ti
+# Subir todos los cambios de esta sesión
 git add .
-git commit -m "docs: rename project to Circe CNC and add ASCII art"
+git commit -m "feat: rename to CirCNC, add motor profiles (80mm/40mm) and branding"
 git push origin main
 ```
 
-### 3. Guía para tus Colaboradores
-Dile a tus colaboradores que ejecuten lo siguiente para que sus carpetas y remotos queden sincronizados:
+### Guía para tus Colaboradores
+Dile a cada colaborador que ejecute esto en su máquina:
 
 ```bash
-# 1. Cambiar la URL del remoto
-git remote set-url origin https://github.com/TU_USUARIO/Circe-CNC.git
+# 1. Actualizar la URL del remoto
+git remote set-url origin https://github.com/TU_USUARIO/CirCNC.git
 
-# 2. Bajar los nuevos cambios
+# 2. Descargar todos los cambios
 git pull origin main
 ```
 
 > [!TIP]
-> **Próximo Paso**: Una vez que confirmes que todo funciona bien con el nuevo nombre, procederemos con la creación del ejecutable (.exe) usando **PyInstaller** para finalizar la fase de despliegue.
+> **Próximo Paso**: Con el sistema completamente renombrado y los perfiles de motor funcionando, el siguiente paso es generar el **ejecutable (.exe)** con PyInstaller para distribución.

@@ -1,8 +1,8 @@
-# Guía de Pruebas - Circe CNC
+# Guía de Pruebas - CirCNC
 
 ## Descripción General
 
-Este documento describe la infraestructura de pruebas implementada para el controlador Circe CNC. Las pruebas están diseñadas para validar la funcionalidad del aplicativo y facilitar su montaje y optimización.
+Este documento describe la infraestructura de pruebas implementada para el controlador CirCNC (Versión 1.1). Las pruebas están diseñadas para validar la funcionalidad del aplicativo y facilitar su montaje y optimización.
 
 ## Estructura de Pruebas
 

@@ -46,17 +46,17 @@ class TestMotorConfiguration:
         """Test X-axis motor working range"""
         controller = GCodeController()
         
-        # X axis should have 0-40mm range for DVD stepper
+        # X axis should have 0-80mm range for Nema stepper
         assert controller.machine_limits['x']['min'] == 0
-        assert controller.machine_limits['x']['max'] == 40
+        assert controller.machine_limits['x']['max'] == 80
         
     def test_motor_y_axis_range(self):
         """Test Y-axis motor working range"""
         controller = GCodeController()
         
-        # Y axis should have 0-40mm range for DVD stepper
+        # Y axis should have 0-80mm range for Nema stepper
         assert controller.machine_limits['y']['min'] == 0
-        assert controller.machine_limits['y']['max'] == 40
+        assert controller.machine_limits['y']['max'] == 80
         
     def test_servo_z_axis_range(self):
         """Test Z-axis servo working range"""
@@ -346,14 +346,14 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.position = {'x': 40, 'y': 10, 'z': 2}
+        controller.position = {'x': 80, 'y': 10, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
             result = controller.jog('x+', 1.0)
             
         # Movement should be blocked
         assert result is False
-        assert controller.position['x'] == 40
+        assert controller.position['x'] == 80
         
     def test_y_axis_min_limit_enforcement(self):
         """Test that Y-axis minimum limit is enforced"""
@@ -374,14 +374,14 @@ class TestMotorLimitEnforcement:
         controller = GCodeController()
         controller.port = MagicMock()
         controller.port.is_open = True
-        controller.position = {'x': 10, 'y': 40, 'z': 2}
+        controller.position = {'x': 10, 'y': 80, 'z': 2}
         
         with patch.object(controller, 'send_command', return_value=True):
             result = controller.jog('y+', 1.0)
             
         # Movement should be blocked
         assert result is False
-        assert controller.position['y'] == 40
+        assert controller.position['y'] == 80
         
     def test_z_axis_min_limit_enforcement(self):
         """Test that Z-axis minimum limit is enforced"""

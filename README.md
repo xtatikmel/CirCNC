@@ -1,16 +1,18 @@
-# Circe CNC
+# CirCNC
+
+![Banner](images/banner.jpg)
 
 ```
-  _____ _                _   _  _____ 
- / ____(_)              | \ | |/ ____|
-| |     _ _ __ ___ ___  |  \| | |     
-| |    | | '__/ __/ _ \ | . ` | |     
-| |____| | | | (_|  __/ | |\  | |____ 
- \_____|_|_|  \___\___| |_| \_|\_____|
+  _____ _       _____ _   _  _____ 
+ / ____(_)     / ____| \ | |/ ____|
+| |     _ _ __| |    |  \| | |     
+| |    | | '__| |    | . ` | |     
+| |____| | |  | |____| |\  | |____ 
+ \_____|_|_|   \_____|_| \_|\_____|
 ```
 
 ## Descripción
-**Circe CNC** es una aplicación avanzada inspirada en la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que Circe transformaba la realidad con precisión, esta herramienta permite transformar diseños complejos en movimientos mecánicos exactos.
+**CirCNC** es una aplicación avanzada inspirada en Circe, la diosa hechicera de la mitología griega, evocando los conceptos de **transformación** y **control**. Al igual que ella transformaba la realidad con precisión, esta herramienta permite convertir diseños digitales en movimientos mecánicos exactos.
 
 Desarrollada por 'Paradoja Developers', permite controlar máquinas CNC mediante comandos G-code. La interfaz gráfica proporciona una forma intuitiva de cargar, ejecutar y monitorear programas G-code, además de ofrecer controles manuales para la máquina.
 
@@ -68,9 +70,9 @@ python gctrl.py
 
 ## Capturas de Pantalla
 
-![Interfaz Principal](Capturas/GUI.png)
+![Interfaz Principal](images/GUI.png)
 
-![Trabajo Completado](Capturas/complete.png)
+![Trabajo Completado](images/complete.png)
 
 ## Pruebas
 

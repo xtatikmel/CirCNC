@@ -1,7 +1,7 @@
 """
-CIRCE CNC - CONTROLADOR DE PLOTTER
-==================================
-Versión inspirada en la mitología griega: Transformación y Control.
+CIRCNC - CONTROLADOR DE PLOTTER
+==============================
+Versión: Transformación y Control.
 
 ✅ Control manual paso a paso FUNCIONAL
 ✅ Gráfica completamente visible y redimensionable
@@ -113,9 +113,9 @@ class GCodeController:
         
         
         self.machine_limits = {
-            'x': {'min': -100, 'max': 100},
-            'y': {'min': -100, 'max': 100},
-            'z': {'min': -5, 'max': 5}
+            'x': {'min': 0, 'max': 80},
+            'y': {'min': 0, 'max': 80},
+            'z': {'min': 0, 'max': 180}
         }
         
         self.SPEEDS = {
@@ -126,11 +126,16 @@ class GCodeController:
             'muy_rapido': 5.0
         }
         self.current_speed = 'normal'
-        
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
         self.completion_callback = None
         self.serial_lock = threading.Lock()
+    
+    def set_machine_limits(self, max_val):
+        """Actualiza los límites de la máquina en caliente"""
+        self.machine_limits['x']['max'] = max_val
+        self.machine_limits['y']['max'] = max_val
+        self.log(f"📍 Área de trabajo actualizada: {max_val}x{max_val}mm")
     
     def set_log_callback(self, callback):
         self.log_callback = callback
@@ -242,7 +247,7 @@ class GCodeController:
                 self.log(f"❌ Error lectura: {e}")
                 break
     
-    def send_command(self, command):
+    def send_command(self, command, log_it=True):
         if not self.port or not self.port.is_open:
             return False
         
@@ -252,7 +257,7 @@ class GCodeController:
                     command = command + '\n'
                 
                 self.port.write(command.encode())
-                if command.strip() != "?":
+                if log_it and command.strip() != "?":
                     self.log(f"→ {command.strip()}")
                 return True
         except Exception as e:
@@ -384,37 +389,44 @@ class GCodeController:
         self.gcode_index = 0
         
         def _stream():
-            self.send_command("G90")
-            time.sleep(0.2)
-            
-            while self.gcode_index < len(self.gcode) and self.streaming:
-                if self.paused:
-                    time.sleep(0.1)
-                    continue
+            try:
+                self.send_command("G90")
+                time.sleep(0.2)
                 
-                line = self.gcode[self.gcode_index]
-                
-                # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
-                if "M300" in line.upper():
-                    match = re.search(r'S(\d+)', line.upper())
-                    if match:
-                        self.servo_angle = int(match.group(1))
-                        
-                self.send_command(line)
-                self.gcode_index += 1
-                
-                # Pedir actualización de posición (estado) cada 2 líneas para la UI
-                if self.gcode_index % 2 == 0:
-                    self.send_command("?")
+                while self.gcode_index < len(self.gcode) and self.streaming:
+                    if self.paused:
+                        time.sleep(0.1)
+                        continue
                     
-                time.sleep(0.3)
-            
-            if self.streaming:
+                    line = self.gcode[self.gcode_index]
+                    
+                    # Notificar a la GUI qué línea estamos procesando
+                    self.log(f"[L{self.gcode_index + 1}] → {line}")
+                    
+                    # Extraemos y actualizamos M300 si el gcode maneja el servo directamente
+                    if "M300" in line.upper():
+                        match = re.search(r'S(\d+)', line.upper())
+                        if match:
+                            self.servo_angle = int(match.group(1))
+                            
+                    self.send_command(line, log_it=False)
+                    self.gcode_index += 1
+                    
+                    # Pedir actualización de posición (estado) cada 2 líneas para la UI
+                    if self.gcode_index % 2 == 0:
+                        self.send_command("?", log_it=False)
+                        
+                    time.sleep(0.3)
+                
+                if self.streaming:
+                    self.log("🏁 G-code enviado completamente al puerto serial")
+                    self.return_to_origin()
+                    if self.completion_callback:
+                        self.completion_callback()
+            except Exception as e:
+                self.log(f"💥 Error crítico en streaming: {e}")
+            finally:
                 self.streaming = False
-                self.log("✅ G-code completado")
-                self.return_to_origin()
-                if self.completion_callback:
-                    self.completion_callback()
         
         threading.Thread(target=_stream, daemon=True).start()
     
@@ -456,7 +468,7 @@ class GCodeController:
 class GCodeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Circe CNC - Control Avanzado - Paradoja Devs")
+        self.root.title("CirCNC - Control Avanzado - Paradoja Devs")
         self.root.geometry("1600x1000")
         
         self.controller = GCodeController()
@@ -480,14 +492,14 @@ class GCodeGUI:
         self.update_progress()
         
         # Mensaje de bienvenida con Arte ASCII (usando raw strings para evitar SyntaxWarning)
-        self.log(r"  _____ _                _   _  _____ ")
-        self.log(r" / ____(_)              | \ | |/ ____|")
-        self.log(r"| |     _ _ __ ___ ___  |  \| | |     ")
-        self.log(r"| |    | | '__/ __/ _ \ | . ` | |     ")
-        self.log(r"| |____| | | | (_|  __/ | |\  | |____ ")
-        self.log(r" \_____|_|_|  \___\___| |_| \_|\_____|")
-        self.log("-" * 40)
-        self.log("🪄 CirCNC: Transformación y Control Iniciados")
+        self.log(r"  _____ _       _____ _   _  _____ ")
+        self.log(r" / ____(_)     / ____| \ | |/ ____|")
+        self.log(r"| |     _ _ __| |    |  \| | |     ")
+        self.log(r"| |    | | '__| |    | . ` | |     ")
+        self.log(r"| |____| | |  | |____| |\  | |____ ")
+        self.log(r" \_____|_|_|   \_____|_| \_|\_____|")
+        self.log("-" * 42)
+        self.log("🪄 CirCNC: El Poder de la Transformación")
         
         # Estado del cronómetro
         self.job_seconds = 0
@@ -511,9 +523,18 @@ class GCodeGUI:
         self.connect_btn = ttk.Button(control_frame, text="Conectar", command=self.toggle_connection)
         self.connect_btn.grid(row=0, column=3, padx=5)
         
+        # Perfiles de Máquina
+        ttk.Label(control_frame, text="Perfil Motor:").grid(row=0, column=4, padx=5)
+        self.profile_var = tk.StringVar(value="80mm (Nema 9294)")
+        self.profile_combo = ttk.Combobox(control_frame, textvariable=self.profile_var, 
+                                          values=["80mm (Nema 9294)", "40mm (DVD Stepper)"], 
+                                          state="readonly", width=18)
+        self.profile_combo.grid(row=0, column=5, padx=5)
+        self.profile_combo.bind("<<ComboboxSelected>>", self.on_profile_change)
+        
         # Velocidades
         speed_frame = ttk.LabelFrame(control_frame, text="Velocidad", padding="5")
-        speed_frame.grid(row=0, column=4, columnspan=3, sticky=(tk.W, tk.E), padx=10)
+        speed_frame.grid(row=0, column=6, columnspan=3, sticky=(tk.W, tk.E), padx=10)
         
         ttk.Button(speed_frame, text="🐌 M.LENTO", 
                    command=lambda: self.set_speed('muy_lento'), width=12).grid(row=0, column=0, padx=2)
@@ -527,7 +548,7 @@ class GCodeGUI:
                    command=lambda: self.set_speed('muy_rapido'), width=12).grid(row=0, column=4, padx=2)
         
         self.speed_label = ttk.Label(control_frame, text="Velocidad: NORMAL", font=("Arial", 10, "bold"))
-        self.speed_label.grid(row=1, column=4, columnspan=3)
+        self.speed_label.grid(row=1, column=6, columnspan=3)
         
         # === ISOLOGOTIPO (Top Right) ===
         try:
@@ -539,7 +560,7 @@ class GCodeGUI:
                 logo_img = logo_img.resize((int(60 * aspect_ratio), 60), Image.Resampling.LANCZOS)
                 self.logo_photo = ImageTk.PhotoImage(logo_img)
                 self.logo_label = ttk.Label(control_frame, image=self.logo_photo)
-                self.logo_label.grid(row=0, column=7, rowspan=2, padx=20, sticky=tk.E)
+                self.logo_label.grid(row=0, column=9, rowspan=2, padx=20, sticky=tk.E)
         except Exception as e:
             print(f"Error cargando logotipo: {e}")
             
@@ -586,6 +607,9 @@ class GCodeGUI:
         self.load_btn = ttk.Button(left_frame, text="📂 Cargar G-code", command=self.open_file, width=30)
         self.load_btn.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
         
+        # Tag para resaltar línea actual
+        self.gcode_area.tag_configure("current_line", background="#ffffcf", foreground="black", font=("Courier", 9, "bold"))
+        
         # Botón centrar en origen
         self.normalize_btn = ttk.Button(left_frame, text="🎯 Centrar diseño en Origen (0,0)", command=self.normalize_gcode, state=tk.DISABLED, width=30)
         self.normalize_btn.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=5)
@@ -607,9 +631,10 @@ class GCodeGUI:
         self.ax.set_ylim(-5, 95)
         self.ax.set_aspect('equal', adjustable='box')
         
-        # Límites del área de trabajo (Fuera de los ejes o en el borde)
-        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
-        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        # Límites del área de trabajo (inicial 80x80)
+        self.work_area_rect = patches.Rectangle((0, 0), 80, 80, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--')
+        self.ax.add_patch(self.work_area_rect)
+        self.work_area_text = self.ax.text(40, 81, 'Área de Trabajo: 80×80mm', ha='center', fontsize=8, color='red', weight='bold')
         
         # Inicializar punto cruz
         self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
@@ -714,6 +739,24 @@ class GCodeGUI:
             self.controller.send_command(cmd)
             self.manual_cmd_var.set("")
             
+    def on_profile_change(self, event=None):
+        """Maneja el cambio de perfil de máquina (80mm o 40mm)"""
+        profile = self.profile_var.get()
+        if "80mm" in profile:
+            limit = 80
+        else:
+            limit = 40
+            
+        self.controller.set_machine_limits(limit)
+        
+        # Actualizar visualización (solo si ya se ha renderizado)
+        try:
+            self.ax.set_xlim(-5, 95)
+            self.ax.set_ylim(-5, 95)
+            self.plot_gcode() # Redibuja todo incluyendo los nuevos límites
+        except:
+            pass
+            
     def update_time_estimation(self):
         """Calcula el tiempo estimado basado en distintas velocidades (F) y retrasos del software/hardware"""
         # +0.5s por comando de servo (constante)
@@ -757,6 +800,8 @@ class GCodeGUI:
             if self.controller.connect(port):
                 self.connect_btn.configure(text="Desconectar")
                 self.start_btn.configure(state=tk.NORMAL)
+                # Forzar actualización de límites al conectar
+                self.on_profile_change()
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")
@@ -772,8 +817,8 @@ class GCodeGUI:
             self.log(f"📂 Cargando: {fn}")
             if self.controller.load_gcode(fn):
                 self.gcode_area.delete(1.0, tk.END)
-                for i, line in enumerate(self.controller.gcode[:40], 1):
-                    self.gcode_area.insert(tk.END, f"{i:3d}: {line}\n")
+                for i, line in enumerate(self.controller.gcode, 1):
+                    self.gcode_area.insert(tk.END, f"{i:4d}: {line}\n")
                 
                 if self.parser.parse(fn):
                     self.plot_gcode()
@@ -795,8 +840,10 @@ class GCodeGUI:
         self.ax.set_aspect('equal', adjustable='box')
         
         # Límites del área de trabajo
-        self.ax.add_patch(patches.Rectangle((0, 0), 90, 90, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--'))
-        self.ax.text(45, 91, 'Área de Trabajo: 90×90mm', ha='center', fontsize=8, color='red', weight='bold')
+        limit = self.controller.machine_limits['x']['max']
+        self.work_area_rect = patches.Rectangle((0, 0), limit, limit, linewidth=1.5, edgecolor='red', facecolor='none', linestyle='--')
+        self.ax.add_patch(self.work_area_rect)
+        self.work_area_text = self.ax.text(limit/2, limit+1, f'Área de Trabajo: {limit}×{limit}mm', ha='center', fontsize=8, color='red', weight='bold')
         
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
@@ -897,17 +944,32 @@ class GCodeGUI:
         self.start_btn.configure(state=tk.NORMAL)
         self.pause_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.DISABLED)
+        
         mins = self.job_seconds // 60
         secs = self.job_seconds % 60
-        messagebox.showinfo("Trabajo Completado", f"¡El archivo G-code ha terminado de ejecutarse!\nTiempo total: {mins:02d}:{secs:02d}")
+        
+        self.log(f"🔔 NOTIFICACIÓN: Trabajo completado en {mins:02d}:{secs:02d}")
+        
+        # Mostrar caja de diálogo asegurando que esté en frente
+        messagebox.showinfo("Proceso Finalizado", 
+                             f"¡El archivo G-code ha terminado de ejecutarse!\n\n"
+                             f"⏱️ Tiempo total: {mins:02d}:{secs:02d}\n"
+                             f"📍 La máquina ha retornado al origen.",
+                             parent=self.root)
         
     def log(self, message):
+        """Añade un mensaje al log de forma segura para hilos"""
+        self.root.after(0, self._append_to_log, message)
+        
+    def _append_to_log(self, message):
+        """Método interno ejecutado en el hilo principal"""
         self.log_area.insert(tk.END, message + "\n")
         self.log_area.see(tk.END)
     
     def update_position(self):
-        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / 90.00 mm")
-        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / 90.00 mm")
+        limit = self.controller.machine_limits['x']['max']
+        self.x_label.configure(text=f"{self.controller.position['x']:.2f} / {limit:.2f} mm")
+        self.y_label.configure(text=f"{self.controller.position['y']:.2f} / {limit:.2f} mm")
         # Mostramos el ángulo real del servo para Z
         self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
         
@@ -935,8 +997,21 @@ class GCodeGUI:
             
             self.progress_var.set(percent)
             self.progress_label.configure(text=f"{current} / {total} líneas ({percent}%)")
+            
+            # Resaltar la línea actual en el área de G-code (ajustando a 1-indexed de Tkinter)
+            if self.controller.streaming:
+                self.highlight_gcode_line(current + 1)
         
         self.root.after(100, self.update_progress)
+
+    def highlight_gcode_line(self, line_num):
+        """Resalta la línea actual y hace scroll para mantenerla visible"""
+        self.gcode_area.tag_remove("current_line", "1.0", tk.END)
+        if line_num > 0:
+            pos = f"{line_num}.0"
+            end = f"{line_num}.end"
+            self.gcode_area.tag_add("current_line", pos, end)
+            self.gcode_area.see(pos)
     
     def on_closing(self):
         if messagebox.askokcancel("Salir", "¿Cerrar aplicación?"):

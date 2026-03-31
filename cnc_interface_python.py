@@ -1,6 +1,6 @@
 """
 =====================================
-CIRCE CNC - CONTROLADOR PROFESIONAL
+CirCNC - CONTROLADOR PROFESIONAL
 =====================================
 Versión: Transformación y Control.
 ✅ Comunicación serial optimizada
@@ -25,7 +25,7 @@ import platform
 
 # ===== CONSTANTES =====
 DISTANCE_PER_STEP = 0.127  # mm
-EFFECTIVE_STROKE = 80.01   # mm
+EFFECTIVE_STROKE = 80.0   # mm
 MAX_POSITION = int(EFFECTIVE_STROKE / DISTANCE_PER_STEP)
 
 class CNController:
@@ -238,7 +238,7 @@ class CNCInterface:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("🪄 CIRCE CNC - CONTROL PROFESIONAL - Mini Plotter")
+        self.root.title("🪄 CirCNC - CONTROL PROFESIONAL - Mini Plotter")
         self.root.geometry("1400x900")
         self.root.configure(bg="#1e1e1e")
         
@@ -257,7 +257,7 @@ class CNCInterface:
         self.log("| |____| | | | (_|  __/ | |\  | |____ ")
         self.log(" \\_____|_|_|  \\___\\___| |_| \\_|\\_____|")
         self.log("-" * 40)
-        self.log("🪄 Circe CNC: El poder de la transformación.")
+        self.log("🪄 CirCNC: El poder de la transformación.")
         
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.bind('<Key>', self.on_key_press)
