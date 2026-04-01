@@ -121,6 +121,9 @@ class GCodeController:
         # Distancia de paso para control manual (en mm por movimiento)
         # No afecta la velocidad real, solo la distancia recorrida por cada paso
         self.STEP_DISTANCES = {
+            '0.1mm': 0.1,
+            '0.25mm': 0.25,
+            '0.5mm': 0.5,
             '1mm': 1.0,
             '5mm': 5.0,
             '10mm': 10.0,
@@ -128,6 +131,12 @@ class GCodeController:
             '50mm': 50.0
         }
         self.current_step = '10mm'  # Valor por defecto
+        self.JOG_SPEEDS = {
+            'lenta': {'feed': 500, 'delay': 0.20, 'label': 'Lenta'},
+            'media': {'feed': 900, 'delay': 0.10, 'label': 'Media'},
+            'rapida': {'feed': 1500, 'delay': 0.05, 'label': 'Rápida'}
+        }
+        self.current_speed = 'media'
         self.STEPS_PER_MM = 35.56
         self.log_callback = None
         self.completion_callback = None
@@ -265,6 +274,10 @@ class GCodeController:
         except Exception as e:
             self.log(f"❌ Error: {str(e)}")
             return False
+
+    def get_status(self):
+        """Solicita estado instantaneo de la controladora."""
+        return self.send_command("?", log_it=False)
     
     def check_limits(self, x=None, y=None, z=None):
         if x is not None:
@@ -278,18 +291,24 @@ class GCodeController:
                 return False
         return True
     
-    def jog_step(self, axis, direction, speed_type='normal'):
+    def jog_step(self, axis, direction, step_key=None, speed_key=None):
         """Movimiento paso a paso MEJORADO"""
         if not self.port or not self.port.is_open:
             self.log("❌ Sin conexión a Arduino")
             return False
         
         axis = axis.upper()
-        step_distance = self.STEP_DISTANCES.get(speed_type, 10.0)
+        step_key = step_key or self.current_step
+        speed_key = speed_key or self.current_speed
+        step_distance = self.STEP_DISTANCES.get(step_key, self.STEP_DISTANCES['10mm'])
+        speed_profile = self.JOG_SPEEDS.get(speed_key, self.JOG_SPEEDS['media'])
+        feedrate = speed_profile['feed']
+        step_delay = speed_profile['delay']
         
         # Calcular nueva posición / Control de Servo Z
         if axis == 'Z':
-            step_deg = int(step_distance)  # step_distance ya es distancia en mm
+            # Para pasos sub-mm, garantizamos al menos 1 grado de avance.
+            step_deg = max(1, int(round(step_distance * 2)))
             if direction == '+':
                 self.servo_angle += step_deg
             else:
@@ -298,7 +317,7 @@ class GCodeController:
             self.servo_angle = max(0, min(180, self.servo_angle)) # Límite físico del servo
             
             self.send_command(f"M300 S{self.servo_angle}")
-            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Paso {speed_type}")
+            self.log(f"📍 SERVO Z: {direction} ({self.servo_angle}°) Paso {step_key} Vel {speed_profile['label']}")
             return True
         
         new_pos = self.position.copy()
@@ -320,24 +339,13 @@ class GCodeController:
         sign = "+" if direction == "+" else ""
         distance = step_distance if direction == "+" else -step_distance
         
-        # Calcular delay basado en velocidad (menor delay = más rápido)
-        # Esto complementa la velocidad del motor en Arduino
-        delay_mapping = {
-            'muy_lento': 0.5,
-            'lento': 0.3,
-            'normal': 0.1,
-            'rapido': 0.05,
-            'muy_rapido': 0.02
-        }
-        step_delay = delay_mapping.get(speed_type, 0.1)
-        
         commands = [
             "G91",  # Modo relativo
-            f"G1 {axis}{sign}{distance}",  # Movimiento
+            f"G1 {axis}{sign}{distance} F{feedrate}",  # Movimiento
             "G90"   # Volver a absoluto
         ]
         
-        self.log(f"🔍 DEBUG: speed_type={speed_type}, step_distance={step_distance}, step_delay={step_delay}s")
+        self.log(f"🔍 DEBUG: paso={step_key}, vel={speed_key}, dist={step_distance}mm, F{feedrate}, delay={step_delay}s")
         for cmd in commands:
             self.send_command(cmd)
             time.sleep(step_delay)  # Delay variable según velocidad
@@ -346,7 +354,7 @@ class GCodeController:
         time.sleep(0.3)
         self.send_command("?")
         
-        self.log(f"📍 {speed_type.upper()}: {axis}{direction} {step_distance}mm")
+        self.log(f"📍 {axis}{direction} {step_distance}mm ({speed_profile['label']})")
         return True
     
     def set_step(self, step_distance):
@@ -356,6 +364,15 @@ class GCodeController:
             distance_mm = self.STEP_DISTANCES[step_distance]
             self.log(f"⚙️  Paso: {step_distance.upper()} ({distance_mm}mm por movimiento)")
             self.log(f"🔍 DEBUG: set_step called - step_distance={step_distance}, distance_mm={distance_mm}, current_step={self.current_step}")
+            return True
+        return False
+
+    def set_speed(self, speed_key):
+        """Configura la velocidad de jog (feedrate + delay)."""
+        if speed_key in self.JOG_SPEEDS:
+            self.current_speed = speed_key
+            profile = self.JOG_SPEEDS[speed_key]
+            self.log(f"🚀 Velocidad jog: {profile['label']} (F{profile['feed']})")
             return True
         return False
     
@@ -377,6 +394,66 @@ class GCodeController:
         time.sleep(0.2)
         self.send_command("?")
         self.log("✅ Origen establecido")
+        return True
+
+    def mark_current_as_origin(self):
+        """Marca la posicion actual como 0,0,0 sin mover la maquina."""
+        if not self.port or not self.port.is_open:
+            return False
+
+        self.log("📍 Marcando la posición actual como origen de trabajo...")
+        self.send_command("G92 X0 Y0 Z0")
+        self.offset = self.mpos.copy()
+        self.position = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.send_command("?")
+        self.log("✅ La posición actual quedó definida como (0,0,0)")
+        return True
+
+    def verify_origin_offset(self, tolerance=0.30):
+        """Verifica que la posicion de trabajo sea cercana a 0,0,0."""
+        if not self.port or not self.port.is_open:
+            return False, self.position.copy()
+
+        self.get_status()
+        time.sleep(0.25)
+        x = abs(self.position.get('x', 0.0))
+        y = abs(self.position.get('y', 0.0))
+        z = abs(self.position.get('z', 0.0))
+        ok = x <= tolerance and y <= tolerance and z <= tolerance
+        return ok, self.position.copy()
+
+    def test_limits(self):
+        """Prueba corta de limites por software dentro del area de trabajo."""
+        if not self.port or not self.port.is_open:
+            self.log("❌ Sin conexión para probar límites")
+            return False
+
+        max_x = float(self.machine_limits['x']['max'])
+        max_y = float(self.machine_limits['y']['max'])
+
+        if max_x <= 0 or max_y <= 0:
+            self.log("❌ Límites inválidos")
+            return False
+
+        target_x = min(max_x, 10.0)
+        target_y = min(max_y, 10.0)
+
+        self.log(f"🧪 Probar límites (zona segura): X<= {max_x:.1f}, Y<= {max_y:.1f}")
+        commands = [
+            "G90",
+            f"G1 X{target_x:.2f} Y0 F900",
+            f"G1 X0 Y{target_y:.2f} F900",
+            "G1 X0 Y0 F900",
+        ]
+
+        for cmd in commands:
+            if not self.send_command(cmd):
+                self.log("❌ Falló prueba de límites")
+                return False
+            time.sleep(0.25)
+
+        self.get_status()
+        self.log("✅ Prueba de límites finalizada")
         return True
     
     def load_gcode(self, filename):
@@ -553,20 +630,29 @@ class GCodeGUI:
         # Distancia de paso para control manual
         speed_frame = ttk.LabelFrame(control_frame, text="Distancia de Paso", padding="5")
         speed_frame.grid(row=0, column=6, columnspan=3, sticky=(tk.W, tk.E), padx=10)
-        
-        ttk.Button(speed_frame, text="1mm", 
-                   command=lambda: self.set_step('1mm'), width=12).grid(row=0, column=0, padx=2)
-        ttk.Button(speed_frame, text="5mm", 
-                   command=lambda: self.set_step('5mm'), width=12).grid(row=0, column=1, padx=2)
-        ttk.Button(speed_frame, text="10mm", 
-                   command=lambda: self.set_step('10mm'), width=12).grid(row=0, column=2, padx=2)
-        ttk.Button(speed_frame, text="25mm", 
-                   command=lambda: self.set_step('25mm'), width=12).grid(row=0, column=3, padx=2)
-        ttk.Button(speed_frame, text="50mm", 
-                   command=lambda: self.set_step('50mm'), width=12).grid(row=0, column=4, padx=2)
+        step_buttons = ['0.1mm', '0.25mm', '0.5mm', '1mm', '5mm', '10mm', '25mm', '50mm']
+        for idx, step_name in enumerate(step_buttons):
+            ttk.Button(
+                speed_frame,
+                text=step_name,
+                command=lambda s=step_name: self.set_step(s),
+                width=8
+            ).grid(row=idx // 4, column=idx % 4, padx=2, pady=2)
         
         self.speed_label = ttk.Label(control_frame, text="Paso: 10mm", font=("Arial", 10, "bold"))
         self.speed_label.grid(row=1, column=6, columnspan=3)
+
+        jog_speed_frame = ttk.LabelFrame(control_frame, text="Velocidad Jog", padding="5")
+        jog_speed_frame.grid(row=1, column=0, columnspan=6, sticky=(tk.W, tk.E), padx=5)
+        self.jog_speed_var = tk.StringVar(value=self.controller.current_speed)
+        ttk.Radiobutton(jog_speed_frame, text="Lenta", value='lenta', variable=self.jog_speed_var,
+                        command=self.on_speed_change).grid(row=0, column=0, padx=6)
+        ttk.Radiobutton(jog_speed_frame, text="Media", value='media', variable=self.jog_speed_var,
+                        command=self.on_speed_change).grid(row=0, column=1, padx=6)
+        ttk.Radiobutton(jog_speed_frame, text="Rápida", value='rapida', variable=self.jog_speed_var,
+                        command=self.on_speed_change).grid(row=0, column=2, padx=6)
+        self.jog_speed_label = ttk.Label(jog_speed_frame, text="Velocidad: Media", font=("Arial", 10, "bold"))
+        self.jog_speed_label.grid(row=0, column=3, padx=10)
         
         # === ISOLOGOTIPO (Top Right) ===
         try:
@@ -613,6 +699,8 @@ class GCodeGUI:
         
         ttk.Button(jog_frame, text="🏠 Establecer Origen", command=self.set_origin, 
                    width=25).grid(row=4, column=0, columnspan=3, pady=8, sticky=(tk.W, tk.E))
+        ttk.Button(jog_frame, text="🧭 Buscar Origen Asistido", command=self.run_origin_wizard,
+               width=25).grid(row=5, column=0, columnspan=3, pady=2, sticky=(tk.W, tk.E))
         
         # G-code list
         gcode_label = ttk.Label(left_frame, text="Lista G-code", font=("Arial", 10, "bold"))
@@ -669,18 +757,18 @@ class GCodeGUI:
         stream_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
         
         self.start_btn = tk.Button(stream_frame, text="▶️ INICIAR", command=self.start_stream, 
-                                    state=tk.DISABLED, width=15, height=2, bg="#4CAF50", fg="white", 
-                                    font=("Arial", 10, "bold"))
+                                    state=tk.DISABLED, width=11, height=1, bg="#4CAF50", fg="white", 
+                                    font=("Arial", 9, "bold"), padx=4, pady=2)
         self.start_btn.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=3)
         
         self.pause_btn = tk.Button(stream_frame, text="⏸️ PAUSAR", command=self.pause_stream, 
-                                    state=tk.DISABLED, width=15, height=2, bg="#FFC107", 
-                                    font=("Arial", 10, "bold"))
+                                    state=tk.DISABLED, width=11, height=1, bg="#FFC107", 
+                                    font=("Arial", 9, "bold"), padx=4, pady=2)
         self.pause_btn.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         
         self.stop_btn = tk.Button(stream_frame, text="⏹️ DETENER", command=self.stop_stream, 
-                                   state=tk.DISABLED, width=15, height=2, bg="#F44336", fg="white", 
-                                   font=("Arial", 10, "bold"))
+                                   state=tk.DISABLED, width=11, height=1, bg="#F44336", fg="white", 
+                                   font=("Arial", 9, "bold"), padx=4, pady=2)
         self.stop_btn.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
         
         # Posición
@@ -698,6 +786,10 @@ class GCodeGUI:
         ttk.Label(pos_frame, text="Z:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W)
         self.z_label = ttk.Label(pos_frame, text="1.00", font=("Arial", 11, "bold"), foreground="blue")
         self.z_label.grid(row=2, column=1, sticky=tk.W, padx=10)
+
+        ttk.Button(pos_frame, text="Actualizar", command=self.refresh_status, width=18).grid(row=3, column=0, pady=5, sticky=(tk.W, tk.E))
+        ttk.Button(pos_frame, text="Marcar aquí como 0,0", command=self.mark_here_as_origin, width=18).grid(row=3, column=1, pady=5, padx=5, sticky=(tk.W, tk.E))
+        ttk.Button(pos_frame, text="Probar Límites", command=self.test_limits, width=18).grid(row=4, column=0, columnspan=2, pady=3, sticky=(tk.W, tk.E))
         
         # Progreso
         progress_frame = ttk.LabelFrame(right_frame, text="Progreso", padding="5")
@@ -745,7 +837,27 @@ class GCodeGUI:
     
     def jog_step(self, axis, direction):
         """Llama al controlador con velocidad actual"""
-        self.controller.jog_step(axis, direction, self.controller.current_speed)
+        self.controller.jog_step(
+            axis,
+            direction,
+            step_key=self.controller.current_step,
+            speed_key=self.controller.current_speed
+        )
+
+    def on_speed_change(self):
+        speed_key = self.jog_speed_var.get()
+        self.controller.set_speed(speed_key)
+        profile = self.controller.JOG_SPEEDS.get(speed_key, self.controller.JOG_SPEEDS['media'])
+        self.jog_speed_label.configure(text=f"Velocidad: {profile['label']}")
+
+    def refresh_status(self):
+        self.controller.get_status()
+
+    def test_limits(self):
+        if not self.controller.port or not self.controller.port.is_open:
+            messagebox.showwarning("Límites", "Conecta la placa para ejecutar la prueba.")
+            return
+        self.controller.test_limits()
         
     def send_manual_command(self):
         cmd = self.manual_cmd_var.get().strip()
@@ -800,6 +912,128 @@ class GCodeGUI:
     def set_step(self, step_distance):
         self.controller.set_step(step_distance)
         self.speed_label.configure(text=f"Paso: {step_distance.upper()}")
+
+    def mark_here_as_origin(self):
+        if not self.controller.port or not self.controller.port.is_open:
+            messagebox.showwarning("Origen", "Conecta la placa antes de marcar el origen.")
+            return
+
+        if self.controller.mark_current_as_origin():
+            self.log("✅ GUI actualizada: la posición actual fue marcada como (0,0,0)")
+
+    def run_origin_wizard(self):
+        """Abre un asistente no modal para fijar el origen sin bloquear X/Y."""
+        if not self.controller.port or not self.controller.port.is_open:
+            self.log("⚠️ Conecta la placa antes de iniciar el asistente de origen")
+            return
+
+        if getattr(self, 'origin_wizard_window', None) and self.origin_wizard_window.winfo_exists():
+            self.origin_wizard_window.lift()
+            self.origin_wizard_window.focus_force()
+            return
+
+        self.origin_wizard_prev_step = self.controller.current_step
+        self.origin_wizard_prev_speed = self.controller.current_speed
+        self.origin_wizard_stage = 'intro'
+
+        window = tk.Toplevel(self.root)
+        window.title("Origen asistido")
+        window.geometry("520x320")
+        window.transient(self.root)
+        window.resizable(False, False)
+        window.protocol("WM_DELETE_WINDOW", self.close_origin_wizard)
+        self.origin_wizard_window = window
+
+        container = ttk.Frame(window, padding=12)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        self.origin_wizard_title = ttk.Label(container, text="Asistente de origen", font=("Arial", 13, "bold"))
+        self.origin_wizard_title.pack(anchor=tk.W)
+
+        self.origin_wizard_text = ttk.Label(
+            container,
+            text=(
+                "Usa esta ventana como guía.\n"
+                "Los botones X/Y siguen disponibles mientras el asistente está abierto.\n\n"
+                "1) Aproximación gruesa con 5mm\n"
+                "2) Ajuste fino con 0.1mm\n"
+                "3) Fijar origen y verificar offset"
+            ),
+            justify=tk.LEFT
+        )
+        self.origin_wizard_text.pack(anchor=tk.W, pady=(10, 12))
+
+        self.origin_wizard_status = ttk.Label(container, text="Estado: espera inicial", foreground="#0B5CAD")
+        self.origin_wizard_status.pack(anchor=tk.W, pady=(0, 12))
+
+        button_row = ttk.Frame(container)
+        button_row.pack(fill=tk.X, pady=4)
+
+        ttk.Button(button_row, text="Aproximación gruesa", command=self.origin_wizard_set_coarse).pack(side=tk.LEFT, padx=4)
+        ttk.Button(button_row, text="Ajuste fino", command=self.origin_wizard_set_fine).pack(side=tk.LEFT, padx=4)
+        ttk.Button(button_row, text="Fijar y verificar", command=self.origin_wizard_commit).pack(side=tk.LEFT, padx=4)
+
+        bottom_row = ttk.Frame(container)
+        bottom_row.pack(fill=tk.X, pady=(18, 0))
+        ttk.Button(bottom_row, text="Cerrar", command=self.close_origin_wizard).pack(side=tk.RIGHT)
+
+        self.origin_wizard_update_status("Asistente listo. Puedes mover X/Y sin bloquear la interfaz.")
+
+    def origin_wizard_update_status(self, message):
+        if getattr(self, 'origin_wizard_status', None):
+            self.origin_wizard_status.configure(text=f"Estado: {message}")
+
+    def origin_wizard_set_coarse(self):
+        self.set_step('5mm')
+        self.jog_speed_var.set('media')
+        self.on_speed_change()
+        self.origin_wizard_stage = 'coarse'
+        self.origin_wizard_update_status("Aproximación gruesa activa. Usa X/Y para acercarte a la esquina de referencia.")
+
+    def origin_wizard_set_fine(self):
+        self.set_step('0.1mm')
+        self.jog_speed_var.set('lenta')
+        self.on_speed_change()
+        self.origin_wizard_stage = 'fine'
+        self.origin_wizard_update_status("Ajuste fino activo. Haz micro-movimientos y luego fija el origen.")
+
+    def origin_wizard_commit(self):
+        if not self.controller.port or not self.controller.port.is_open:
+            self.origin_wizard_update_status("No hay conexión con la placa.")
+            return
+
+        self.origin_wizard_update_status("Fijando origen...")
+        self.controller.set_origin()
+        self.root.after(350, self.origin_wizard_finish)
+
+    def origin_wizard_finish(self):
+        ok_origin, pos = self.controller.verify_origin_offset(tolerance=0.30)
+
+        self.set_step(self.origin_wizard_prev_step)
+        self.jog_speed_var.set(self.origin_wizard_prev_speed)
+        self.on_speed_change()
+
+        if ok_origin:
+            self.origin_wizard_update_status(
+                f"Origen verificado OK. X={pos['x']:.3f}, Y={pos['y']:.3f}, Z={pos['z']:.3f}"
+            )
+            self.log("✅ Origen asistido completado con verificación OK")
+        else:
+            self.origin_wizard_update_status(
+                f"Desviación detectada. X={pos['x']:.3f}, Y={pos['y']:.3f}, Z={pos['z']:.3f}. Repite el ajuste fino."
+            )
+            self.log("⚠️ Origen asistido finalizó con desviación en verificación")
+
+    def close_origin_wizard(self):
+        if getattr(self, 'origin_wizard_window', None) and self.origin_wizard_window.winfo_exists():
+            self.origin_wizard_window.destroy()
+        self.origin_wizard_window = None
+        self.origin_wizard_stage = None
+        if getattr(self, 'origin_wizard_prev_step', None):
+            self.set_step(self.origin_wizard_prev_step)
+        if getattr(self, 'origin_wizard_prev_speed', None):
+            self.jog_speed_var.set(self.origin_wizard_prev_speed)
+            self.on_speed_change()
     
     def update_ports(self):
         ports = self.controller.find_serial_ports()
@@ -820,10 +1054,15 @@ class GCodeGUI:
                 self.start_btn.configure(state=tk.NORMAL)
                 # Forzar actualización de límites al conectar
                 self.on_profile_change()
+                self.offer_origin_wizard_on_connect()
         else:
             self.controller.disconnect()
             self.connect_btn.configure(text="Conectar")
             self.start_btn.configure(state=tk.DISABLED)
+
+    def offer_origin_wizard_on_connect(self):
+        """Abre el asistente de origen sin bloquear el control manual."""
+        self.run_origin_wizard()
     
     def open_file(self):
         """Abre diálogo para cargar G-code"""
