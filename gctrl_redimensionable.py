@@ -21,6 +21,7 @@ matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.patches as patches
+from matplotlib.collections import LineCollection
 import re
 import math
 import os
@@ -34,9 +35,11 @@ class GCodeParser:
         self.lines = []
         self.x_points = []
         self.y_points = []
+        self.segments = []
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.motion_mode = 'G1'
         self.total_distance = 0.0
     
     def parse(self, filename):
@@ -44,9 +47,11 @@ class GCodeParser:
         self.lines = []
         self.x_points = [0]
         self.y_points = [0]
+        self.segments = []
         self.current_x = 0
         self.current_y = 0
         self.mode_absolute = True
+        self.motion_mode = 'G1'
         self.total_distance = 0.0
         
         try:
@@ -56,13 +61,13 @@ class GCodeParser:
                     if not line or line.startswith(';') or line.startswith('('):
                         continue
                     self.lines.append(line)
-                    self._process_line(line)
+                    self._process_line(line, len(self.lines) - 1)
             return True
         except Exception as e:
             print(f"Error parseando G-code: {e}")
             return False
     
-    def _process_line(self, line):
+    def _process_line(self, line, line_index):
         """Procesa una línea de G-code"""
         line_upper = line.upper()
         
@@ -70,6 +75,11 @@ class GCodeParser:
             self.mode_absolute = True
         elif 'G91' in line_upper:
             self.mode_absolute = False
+
+        if re.search(r'\bG0?0\b', line_upper):
+            self.motion_mode = 'G0'
+        elif re.search(r'\bG0?1\b', line_upper):
+            self.motion_mode = 'G1'
         
         x_match = re.search(r'X([-+]?\d+\.?\d*)', line_upper)
         y_match = re.search(r'Y([-+]?\d+\.?\d*)', line_upper)
@@ -77,6 +87,8 @@ class GCodeParser:
         if x_match or y_match:
             new_x = self.current_x
             new_y = self.current_y
+            old_x = self.current_x
+            old_y = self.current_y
             
             if x_match:
                 x_val = float(x_match.group(1))
@@ -88,6 +100,16 @@ class GCodeParser:
             
             dist = math.sqrt((new_x - self.current_x)**2 + (new_y - self.current_y)**2)
             self.total_distance += dist
+
+            if dist > 0:
+                self.segments.append({
+                    'x0': old_x,
+                    'y0': old_y,
+                    'x1': new_x,
+                    'y1': new_y,
+                    'rapid': self.motion_mode == 'G0',
+                    'line_index': line_index
+                })
             
             self.current_x = new_x
             self.current_y = new_y
@@ -335,13 +357,13 @@ class GCodeController:
         #     self.log(f"❌ Fuera de límites: {axis}={new_pos[axis.lower()]:.2f}mm")
         #     return False
         
-        # Enviar comando G-code con feedrate dinámico
-        sign = "+" if direction == "+" else ""
+        # Enviar comando G-code con feedrate dinámico y valor relativo normalizado.
         distance = step_distance if direction == "+" else -step_distance
+        distance_str = f"{distance:.3f}"
         
         commands = [
             "G91",  # Modo relativo
-            f"G1 {axis}{sign}{distance} F{feedrate}",  # Movimiento
+            f"G1 {axis}{distance_str} F{feedrate}",  # Movimiento
             "G90"   # Volver a absoluto
         ]
         
@@ -569,6 +591,12 @@ class GCodeGUI:
         self.controller.set_log_callback(self.log)
         self.controller.set_completion_callback(self.on_job_completed)
         self.parser = GCodeParser()
+        self.detail_level_var = tk.IntVar(value=3)
+        self.show_points_var = tk.BooleanVar(value=False)
+        self.show_rapid_var = tk.BooleanVar(value=True)
+        self.auto_fit_var = tk.BooleanVar(value=True)
+        self.last_highlighted_segment = -1
+        self.manual_view_limits = None
         
         # Configurar icono de la aplicación
         try:
@@ -582,6 +610,7 @@ class GCodeGUI:
         self.create_widgets()
         self.update_ports()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.last_status_poll = 0.0
         self.update_position()
         self.update_progress()
         
@@ -726,6 +755,21 @@ class GCodeGUI:
         
         viz_label = ttk.Label(center_frame, text="Visualización de Trayectoria", font=("Arial", 10, "bold"))
         viz_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+
+        viz_controls = ttk.Frame(center_frame)
+        viz_controls.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=4, pady=(0, 4))
+        ttk.Label(viz_controls, text="Detalle:").grid(row=0, column=0, padx=(0, 3), sticky=tk.W)
+        self.detail_scale = ttk.Scale(viz_controls, from_=1, to=8, orient=tk.HORIZONTAL,
+                          variable=self.detail_level_var, command=self.on_visual_settings_change)
+        self.detail_scale.grid(row=0, column=1, padx=(0, 8), sticky=(tk.W, tk.E))
+        ttk.Checkbutton(viz_controls, text="Puntos", variable=self.show_points_var,
+                command=self.on_visual_settings_change).grid(row=0, column=2, padx=4, sticky=tk.W)
+        ttk.Checkbutton(viz_controls, text="Mov. rápidos (G0)", variable=self.show_rapid_var,
+                command=self.on_visual_settings_change).grid(row=0, column=3, padx=4, sticky=tk.W)
+        ttk.Checkbutton(viz_controls, text="Auto-ajuste", variable=self.auto_fit_var,
+                command=self.on_visual_settings_change).grid(row=0, column=4, padx=4, sticky=tk.W)
+        ttk.Button(viz_controls, text="Reencuadrar", command=self.fit_plot_to_path, width=11).grid(row=0, column=5, padx=(8, 0))
+        viz_controls.columnconfigure(1, weight=1)
         
         self.fig = Figure(figsize=(5, 5), dpi=100) # Tamaño inicial reducido para dar espacio
         self.ax = self.fig.add_subplot(111)
@@ -746,7 +790,8 @@ class GCodeGUI:
         self.machine_dot, = self.ax.plot([0], [0], 'xc', markersize=14, markeredgewidth=3, label='Posición CNC', zorder=5)
         
         self.canvas = FigureCanvasTkAgg(self.fig, master=center_frame)
-        self.canvas.get_tk_widget().grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.canvas.get_tk_widget().grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.canvas.mpl_connect('scroll_event', self.on_canvas_scroll)
         
         # PANEL DERECHO: INFORMACIÓN
         right_frame = ttk.Frame(paned)
@@ -833,7 +878,138 @@ class GCodeGUI:
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(1, weight=1)
         left_frame.rowconfigure(2, weight=1)
-        center_frame.rowconfigure(1, weight=1)
+        center_frame.rowconfigure(2, weight=1)
+
+    def on_visual_settings_change(self, _event=None):
+        self.plot_gcode()
+
+    def fit_plot_to_path(self):
+        self.auto_fit_var.set(True)
+        self.manual_view_limits = None
+        self.plot_gcode()
+
+    def on_canvas_scroll(self, event):
+        if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+            return
+
+        zoom_in = getattr(event, 'step', 1) > 0 or getattr(event, 'button', '') == 'up'
+        scale = 0.85 if zoom_in else 1.18
+        self.auto_fit_var.set(False)
+        self._zoom_at(event.xdata, event.ydata, scale)
+
+    def _zoom_at(self, x_center, y_center, scale):
+        x_left, x_right = self.ax.get_xlim()
+        y_bottom, y_top = self.ax.get_ylim()
+
+        new_width = (x_right - x_left) * scale
+        new_height = (y_top - y_bottom) * scale
+
+        rel_x = (x_center - x_left) / (x_right - x_left) if x_right != x_left else 0.5
+        rel_y = (y_center - y_bottom) / (y_top - y_bottom) if y_top != y_bottom else 0.5
+
+        new_x_left = x_center - new_width * rel_x
+        new_x_right = new_x_left + new_width
+        new_y_bottom = y_center - new_height * rel_y
+        new_y_top = new_y_bottom + new_height
+
+        self.manual_view_limits = ((new_x_left, new_x_right), (new_y_bottom, new_y_top))
+        self.ax.set_xlim(new_x_left, new_x_right)
+        self.ax.set_ylim(new_y_bottom, new_y_top)
+        self.canvas.draw_idle()
+
+    def _apply_plot_limits(self):
+        """Auto-ajusta la vista al recorrido o usa límites de máquina si no hay datos."""
+        limit = self.controller.machine_limits['x']['max']
+        if self.manual_view_limits and not self.auto_fit_var.get():
+            (x_left, x_right), (y_bottom, y_top) = self.manual_view_limits
+            self.ax.set_xlim(x_left, x_right)
+            self.ax.set_ylim(y_bottom, y_top)
+            return
+
+        if not self.auto_fit_var.get() or not self.parser.x_points or not self.parser.y_points:
+            margin = 5
+            self.ax.set_xlim(-margin, limit + margin)
+            self.ax.set_ylim(-margin, limit + margin)
+            return
+
+        min_x = min(self.parser.x_points)
+        max_x = max(self.parser.x_points)
+        min_y = min(self.parser.y_points)
+        max_y = max(self.parser.y_points)
+        span_x = max(max_x - min_x, 1)
+        span_y = max(max_y - min_y, 1)
+        margin = max(2, 0.08 * max(span_x, span_y))
+
+        self.ax.set_xlim(min(min_x - margin, -2), max(max_x + margin, limit + 2))
+        self.ax.set_ylim(min(min_y - margin, -2), max(max_y + margin, limit + 2))
+
+    def _draw_segments(self):
+        if not self.parser.segments:
+            return
+
+        normal_segments = []
+        rapid_segments = []
+        for seg in self.parser.segments:
+            points = [(seg['x0'], seg['y0']), (seg['x1'], seg['y1'])]
+            if seg['rapid']:
+                rapid_segments.append(points)
+            else:
+                normal_segments.append(points)
+
+        detail = max(1, int(self.detail_level_var.get()))
+        if normal_segments:
+            cut_width = 1.6 + detail * 0.25
+            collection_cut = LineCollection(normal_segments, colors=['#1565c0'], linewidths=cut_width, alpha=0.95, zorder=2)
+            self.ax.add_collection(collection_cut)
+
+        if self.show_rapid_var.get() and rapid_segments:
+            rapid_width = 1.0 + detail * 0.12
+            collection_rapid = LineCollection(
+                rapid_segments,
+                colors=['#9e9e9e'],
+                linewidths=rapid_width,
+                linestyles='dashed',
+                alpha=0.85,
+                zorder=1
+            )
+            self.ax.add_collection(collection_rapid)
+
+        if self.show_points_var.get() and self.parser.x_points and self.parser.y_points:
+            stride = max(1, 10 - detail)
+            self.ax.plot(
+                self.parser.x_points[::stride],
+                self.parser.y_points[::stride],
+                'o',
+                markersize=2.3 + detail * 0.2,
+                color='#455a64',
+                alpha=0.7,
+                zorder=3
+            )
+
+    def _draw_execution_highlight(self):
+        if not self.controller.streaming or not self.parser.segments:
+            return
+
+        current_line = self.controller.gcode_index
+        highlight_segment = None
+        for seg in self.parser.segments:
+            if seg['line_index'] >= current_line:
+                highlight_segment = seg
+                break
+
+        if not highlight_segment:
+            highlight_segment = self.parser.segments[-1]
+
+        self.ax.plot(
+            [highlight_segment['x0'], highlight_segment['x1']],
+            [highlight_segment['y0'], highlight_segment['y1']],
+            color='#ff6f00',
+            linewidth=4.0,
+            alpha=0.95,
+            solid_capstyle='round',
+            label='Tramo en ejecución',
+            zorder=4
+        )
     
     def jog_step(self, axis, direction):
         """Llama al controlador con velocidad actual"""
@@ -1078,6 +1254,8 @@ class GCodeGUI:
                     self.gcode_area.insert(tk.END, f"{i:4d}: {line}\n")
                 
                 if self.parser.parse(fn):
+                    self.last_highlighted_segment = -1
+                    self.manual_view_limits = None
                     self.plot_gcode()
                     self.update_time_estimation()
                     self.log(f"✅ Visualización actualizada: {len(self.parser.x_points)} puntos")
@@ -1092,8 +1270,7 @@ class GCodeGUI:
         self.ax.set_ylabel('Y (mm)', fontsize=10)
         self.ax.set_title('Trayectoria CNC', fontsize=12)
         self.ax.grid(True, alpha=0.3)
-        self.ax.set_xlim(-5, 95)
-        self.ax.set_ylim(-5, 95)
+        self._apply_plot_limits()
         self.ax.set_aspect('equal', adjustable='box')
         
         # Límites del área de trabajo
@@ -1104,10 +1281,11 @@ class GCodeGUI:
         
         # Trayectoria
         if self.parser.x_points and self.parser.y_points:
-            self.ax.plot(self.parser.x_points, self.parser.y_points, 'b-', linewidth=2.5, label='Trayectoria')
+            self._draw_segments()
             self.ax.plot(self.parser.x_points[0], self.parser.y_points[0], 'go', markersize=10, label='Inicio')
             if len(self.parser.x_points) > 1:
                 self.ax.plot(self.parser.x_points[-1], self.parser.y_points[-1], 'rs', markersize=10, label='Final')
+            self._draw_execution_highlight()
             
             # Leyenda fuera del dibujo (arriba)
             self.ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=9, frameon=False)
@@ -1159,6 +1337,11 @@ class GCodeGUI:
         # Actualizar puntos matemáticos del parser instantáneamente
         self.parser.x_points = [x - min_x for x in self.parser.x_points]
         self.parser.y_points = [y - min_y for y in self.parser.y_points]
+        for seg in self.parser.segments:
+            seg['x0'] -= min_x
+            seg['x1'] -= min_x
+            seg['y0'] -= min_y
+            seg['y1'] -= min_y
         
         # Actualizar área de texto para mostrar las nuevas coordenadas
         self.gcode_area.delete(1.0, tk.END)
@@ -1229,12 +1412,19 @@ class GCodeGUI:
         self.y_label.configure(text=f"{self.controller.position['y']:.2f} / {limit:.2f} mm")
         # Mostramos el ángulo real del servo para Z
         self.z_label.configure(text=f"{self.controller.servo_angle}° / 180°")
+
+        # Consulta de estado periódica para mantener la posición viva en UI.
+        if self.controller.port and self.controller.port.is_open:
+            now = time.time()
+            poll_interval = 0.25 if self.controller.streaming else 0.6
+            if now - self.last_status_poll >= poll_interval:
+                self.controller.get_status()
+                self.last_status_poll = now
         
         # Animación del punto cruz rastreador
         if hasattr(self, 'machine_dot'):
             self.machine_dot.set_data([self.controller.position['x']], [self.controller.position['y']])
-            if self.controller.streaming or getattr(self.controller, 'mpos', None):
-                self.canvas.draw_idle()
+            self.canvas.draw_idle()
                 
         self.root.after(200, self.update_position)
         
@@ -1258,6 +1448,9 @@ class GCodeGUI:
             # Resaltar la línea actual en el área de G-code (ajustando a 1-indexed de Tkinter)
             if self.controller.streaming:
                 self.highlight_gcode_line(current + 1)
+                if current != self.last_highlighted_segment:
+                    self.last_highlighted_segment = current
+                    self.plot_gcode()
         
         self.root.after(100, self.update_progress)
 

@@ -28,7 +28,7 @@ const int penServoPin = 10;
 AF_Stepper myStepperY(stepsPerRevolution, 1);            
 AF_Stepper myStepperX(stepsPerRevolution, 2);  
 
-Servo penServo;  
+Servo penServo;
 
 struct point { 
   float x; 
@@ -41,9 +41,9 @@ struct point actuatorPos;
 
 // Motor steps to go 1 millimeter.
 // Dejamos 200.0 como en el original, pero SI LA MÁQUINA CORTA MÁS DISTANCIA 
-// de la indicada, DEBES REDUCIR ESTE VALOR. (Ej: 39.37 es común en motores 18°)
-float StepsPerMillimeterX = 35.56;
-float StepsPerMillimeterY = 35.56;
+// de la indicada, DEBES REDUCIR ESTE VALOR. (Ej: 39.37 o 35.56 es común en motores 18°)
+float StepsPerMillimeterX = 50;
+float StepsPerMillimeterY = 50;
 
 // Drawing robot limits, in mm
 float Xmin = 0;
